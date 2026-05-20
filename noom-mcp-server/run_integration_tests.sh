@@ -15,7 +15,7 @@
 #     OAuth M2M: set DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET
 #
 #   SQL SP credentials — one of:
-#     DATABRICKS_MCP_SECRET_SCOPE             Databricks secret scope with SP creds
+#     Databricks secret scope (default): admin-provisioned dbrix_mcp_secret scope
 #     DATABRICKS_MCP_SQL_CLIENT_ID +          Direct env vars (dev/CI fallback)
 #       DATABRICKS_MCP_SQL_CLIENT_SECRET
 
@@ -56,8 +56,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   exit 1
 fi
 
-# Locate the Python interpreter (prefer repo-root venv, fall back to system)
-PYTHON="${SCRIPT_DIR}/../.venv/bin/python3"
+# Locate the Python interpreter (prefer local venv created by uv sync, fall back to system)
+PYTHON="${SCRIPT_DIR}/.venv/bin/python3"
 if [[ ! -x "$PYTHON" ]]; then
   PYTHON="$(command -v python3)"
 fi
