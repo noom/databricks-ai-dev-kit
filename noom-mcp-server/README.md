@@ -92,6 +92,7 @@ code 1 on any other startup failure.
 
 ```bash
 cd noom-mcp-server
+uv sync --extra dev
 uv run pytest tests/ -v
 ```
 

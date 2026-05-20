@@ -65,7 +65,8 @@ gh pr create --repo noom/databricks-ai-dev-kit --base main
 **Unit tests** (no credentials needed):
 
 ```bash
-pytest tests/ -v
+uv sync --extra dev
+uv run pytest tests/ -v
 ```
 
 **Integration tests** (live Databricks required):
