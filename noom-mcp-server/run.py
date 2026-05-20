@@ -1,21 +1,35 @@
 """Entry point for the Noom-governed Databricks MCP server.
 
-Start with:
-    uv run python run.py
+Prerequisites:
+    databricks auth login --host https://<your-workspace>.cloud.databricks.com
+    cp .env.example .env  # fill in DATABRICKS_HOST, DATABRICKS_MCP_SQL_HOST,
+                          # and DATABRICKS_WAREHOUSE_ID
 
-Or via MCP client config:
+Start with:
+    uv run --env-file .env python run.py
+
+Or via MCP client config (Claude Desktop / Cursor):
     {
-        "command": "uv",
-        "args": ["run", "--directory", "/path/to/noom-mcp-server", "python", "run.py"]
+        "mcpServers": {
+            "noom-databricks": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory", "/path/to/databricks-ai-dev-kit/noom-mcp-server",
+                    "--env-file", "/path/to/databricks-ai-dev-kit/noom-mcp-server/.env",
+                    "python", "run.py"
+                ]
+            }
+        }
     }
 
 Required env vars (see .env.example):
-    DATABRICKS_MCP_SQL_CLIENT_ID      — OAuth client ID for the SQL SP
-    DATABRICKS_MCP_SQL_CLIENT_SECRET  — OAuth client secret for the SQL SP
+    DATABRICKS_HOST              — Workspace URL for OAuth identity resolution
+    DATABRICKS_MCP_SQL_HOST      — Workspace URL for SQL execution (usually same as above)
+    DATABRICKS_WAREHOUSE_ID      — SQL warehouse ID; all queries are forced to this warehouse
 
-Optional:
-    DATABRICKS_MCP_SQL_HOST           — Override workspace host for SQL SP
-                                        (defaults to calling user's workspace)
+SP credentials are fetched automatically from the dbrix_mcp_secret Databricks secret scope.
+See DEVELOPMENT.md for admin setup and dev/CI credential overrides.
 """
 
 import logging
