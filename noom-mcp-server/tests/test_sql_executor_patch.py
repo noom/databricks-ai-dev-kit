@@ -42,14 +42,10 @@ def _save_executor_methods() -> tuple:
 
 
 def _restore_executor_methods(orig_init, orig_execute) -> None:
-    import noom_mcp.sql_executor_patch as m
     from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
 
     SQLExecutor.__init__ = orig_init
     SQLExecutor.execute = orig_execute
-    # Reset the idempotency flag so the next test can re-apply the patch
-    # against the restored (unpatched) SQLExecutor.
-    m._sql_executor_patched = False
 
 
 # ---------------------------------------------------------------------------

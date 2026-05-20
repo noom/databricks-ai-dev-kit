@@ -31,9 +31,6 @@ logger = logging.getLogger(__name__)
 # Process-lifetime cache — one SP client per server process.
 _sql_sp_client = None
 
-# Guard flag so patch_sql_executor() is idempotent (safe to call multiple times).
-_sql_executor_patched = False
-
 # Fixed secret scope and key names — not user-configurable.
 _SECRET_SCOPE = "dbrix_mcp_secret"
 _SECRET_KEY_CLIENT_ID = "sql-sp-client-id"
@@ -225,10 +222,13 @@ def patch_sql_executor() -> None:
     """Patch SQLExecutor to enforce SP client and inject user identity tags.
 
     Idempotent — calling this function more than once has no effect.
+    The check is based on a ``_noom_patched`` marker on the method itself,
+    so it resets automatically if the original methods are ever restored
+    (e.g. in tests).
 
     __init__ patch
         Ignores both the ``warehouse_id`` and ``client`` arguments passed by
-        the caller.  Always substitutes the governed warehouse ID (from
+        the caller.  Always substitutes the configured warehouse ID (from
         DATABRICKS_WAREHOUSE_ID) and the governed SP client.  This ensures
         the AI cannot direct SQL to an arbitrary warehouse.
 
@@ -237,12 +237,11 @@ def patch_sql_executor() -> None:
         The user's identity is resolved *before* the SP client is used,
         so it still reflects the calling user's credentials.
     """
-    global _sql_executor_patched
-    if _sql_executor_patched:
+    from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
+
+    if getattr(SQLExecutor.__init__, "_noom_patched", False):
         logger.debug("SQLExecutor already patched — skipping")
         return
-
-    from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
 
     _original_init = SQLExecutor.__init__
     _original_execute = SQLExecutor.execute
@@ -280,9 +279,9 @@ def patch_sql_executor() -> None:
             query_tags=effective_tags,
         )
 
+    _patched_init._noom_patched = True
     SQLExecutor.__init__ = _patched_init
     SQLExecutor.execute = _patched_execute
-    _sql_executor_patched = True
     logger.info(
         "SQLExecutor patched: warehouse override (%s), SP client override, "
         "user identity tagging active",
