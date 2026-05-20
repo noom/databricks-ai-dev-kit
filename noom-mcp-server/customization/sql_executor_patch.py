@@ -175,8 +175,7 @@ def get_sql_warehouse_id() -> str:
     wh = os.environ.get("DATABRICKS_WAREHOUSE_ID")
     if not wh:
         raise RuntimeError(
-            "DATABRICKS_WAREHOUSE_ID is not set.\n"
-            "Set it to the SQL warehouse ID in your .env file."
+            "DATABRICKS_WAREHOUSE_ID is not set.\nSet it to the SQL warehouse ID in your .env file."
         )
     return wh
 

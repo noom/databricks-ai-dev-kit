@@ -106,8 +106,10 @@ class TestPatchSqlExecutorWarehouseId:
         from customization.sql_executor_patch import patch_sql_executor
 
         mock_sp = MagicMock()
-        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with (
+            patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp),
+            patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"),
+        ):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-caller-supplied", client=None)
@@ -119,8 +121,10 @@ class TestPatchSqlExecutorWarehouseId:
         from customization.sql_executor_patch import patch_sql_executor
 
         mock_sp = MagicMock()
-        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with (
+            patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp),
+            patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"),
+        ):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-some-random-id", client=None)
@@ -131,12 +135,14 @@ class TestPatchSqlExecutorWarehouseId:
         """get_sql_warehouse_id returns the env var value."""
         monkeypatch.setenv("DATABRICKS_WAREHOUSE_ID", "wh-abc123")
         from customization.sql_executor_patch import get_sql_warehouse_id
+
         assert get_sql_warehouse_id() == "wh-abc123"
 
     def test_get_sql_warehouse_id_raises_when_unset(self, monkeypatch):
         """get_sql_warehouse_id raises RuntimeError when env var is missing."""
         monkeypatch.delenv("DATABRICKS_WAREHOUSE_ID", raising=False)
         from customization.sql_executor_patch import get_sql_warehouse_id
+
         with pytest.raises(RuntimeError, match="DATABRICKS_WAREHOUSE_ID is not set"):
             get_sql_warehouse_id()
 
@@ -155,8 +161,10 @@ class TestPatchSqlExecutorSpClient:
         from customization.sql_executor_patch import patch_sql_executor
 
         mock_sp = MagicMock()
-        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with (
+            patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp),
+            patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"),
+        ):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-123", client=None)
@@ -170,8 +178,10 @@ class TestPatchSqlExecutorSpClient:
         caller_client = MagicMock(name="caller_client")
         sp_client = MagicMock(name="sp_client")
 
-        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=sp_client), \
-             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with (
+            patch("customization.sql_executor_patch.get_sql_sp_client", return_value=sp_client),
+            patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"),
+        ):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-123", client=caller_client)
@@ -226,8 +236,13 @@ class TestPatchSqlExecutorIdentityTagging:
 
         # Install a recording spy as the "original" before applying the patch.
         def _spy(
-            self, sql_query, catalog=None, schema=None,
-            row_limit=None, timeout=180, query_tags=None,
+            self,
+            sql_query,
+            catalog=None,
+            schema=None,
+            row_limit=None,
+            timeout=180,
+            query_tags=None,
         ):
             received["query_tags"] = query_tags
             received["sql_query"] = sql_query
@@ -237,9 +252,14 @@ class TestPatchSqlExecutorIdentityTagging:
 
         # Keep mocks active for the actual call — get_mcp_user_identity is
         # resolved at call time, not at patch-install time.
-        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"), \
-             patch("customization.sql_executor_patch.get_mcp_user_identity", return_value="bob@noom.com"):
+        with (
+            patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp),
+            patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"),
+            patch(
+                "customization.sql_executor_patch.get_mcp_user_identity",
+                return_value="bob@noom.com",
+            ),
+        ):
             patch_sql_executor()
 
             executor = SQLExecutor.__new__(SQLExecutor)
@@ -259,17 +279,27 @@ class TestPatchSqlExecutorIdentityTagging:
         mock_sp = MagicMock()
 
         def _spy(
-            self, sql_query, catalog=None, schema=None,
-            row_limit=None, timeout=180, query_tags=None,
+            self,
+            sql_query,
+            catalog=None,
+            schema=None,
+            row_limit=None,
+            timeout=180,
+            query_tags=None,
         ):
             received["query_tags"] = query_tags
             return []
 
         SQLExecutor.execute = _spy
 
-        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"), \
-             patch("customization.sql_executor_patch.get_mcp_user_identity", return_value="carol@noom.com"):
+        with (
+            patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp),
+            patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"),
+            patch(
+                "customization.sql_executor_patch.get_mcp_user_identity",
+                return_value="carol@noom.com",
+            ),
+        ):
             patch_sql_executor()
 
             executor = SQLExecutor.__new__(SQLExecutor)
@@ -383,12 +413,14 @@ class TestBuildSqlSpClient:
         monkeypatch.delenv("DATABRICKS_MCP_SQL_CLIENT_ID", raising=False)
         monkeypatch.setenv("DATABRICKS_MCP_SQL_HOST", "https://noom-prod.cloud.databricks.com")
 
-        with patch(
-            "customization.sql_executor_patch._fetch_sp_credentials_from_secrets",
-            return_value=("secrets-id", "secrets-secret"),
-        ) as mock_fetch, \
-             patch("databricks_tools_core.identity.tag_client", side_effect=lambda c: c), \
-             patch("databricks.sdk.WorkspaceClient", return_value=MagicMock()):
+        with (
+            patch(
+                "customization.sql_executor_patch._fetch_sp_credentials_from_secrets",
+                return_value=("secrets-id", "secrets-secret"),
+            ) as mock_fetch,
+            patch("databricks_tools_core.identity.tag_client", side_effect=lambda c: c),
+            patch("databricks.sdk.WorkspaceClient", return_value=MagicMock()),
+        ):
             from customization.sql_executor_patch import _build_sql_sp_client
 
             _build_sql_sp_client()
@@ -400,11 +432,13 @@ class TestBuildSqlSpClient:
         monkeypatch.setenv("DATABRICKS_MCP_SQL_CLIENT_SECRET", "env-secret")
         monkeypatch.setenv("DATABRICKS_MCP_SQL_HOST", "https://noom-prod.cloud.databricks.com")
 
-        with patch(
-            "customization.sql_executor_patch._fetch_sp_credentials_from_secrets",
-        ) as mock_fetch, \
-             patch("databricks_tools_core.identity.tag_client", side_effect=lambda c: c), \
-             patch("databricks.sdk.WorkspaceClient", return_value=MagicMock()):
+        with (
+            patch(
+                "customization.sql_executor_patch._fetch_sp_credentials_from_secrets",
+            ) as mock_fetch,
+            patch("databricks_tools_core.identity.tag_client", side_effect=lambda c: c),
+            patch("databricks.sdk.WorkspaceClient", return_value=MagicMock()),
+        ):
             from customization.sql_executor_patch import _build_sql_sp_client
 
             _build_sql_sp_client()
