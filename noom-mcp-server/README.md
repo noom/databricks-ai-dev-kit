@@ -80,7 +80,7 @@ End users need READ access on the scope but never see the raw secret values.
 
 ```bash
 cd noom-mcp-server
-uv run python run.py
+uv run --env-file .env python run.py
 ```
 
 The server exits with code 2 on a version mismatch (`UpstreamChangedError`) and
@@ -106,13 +106,42 @@ cd noom-mcp-server
 The integration test verifies that SQL runs as the Service Principal (not the
 calling user) by comparing `SELECT current_user()` output.
 
-## Upgrading the upstream
+## Sync the upstream
 
-When a new upstream release lands (the repo `VERSION` file changes):
+Pull upstream changes when you want a bug fix or new feature from
+`databricks-solutions/ai-dev-kit`. This is optional — only sync when upstream
+has something Noom needs.
 
-1. Check whether `SQLExecutor.__init__` or `.execute` signatures changed in
-   [`databricks-tools-core/databricks_tools_core/sql/sql_utils/executor.py`](../databricks-tools-core/databricks_tools_core/sql/sql_utils/executor.py).
-   Update the patch wrappers in `customization/sql_executor_patch.py` if needed.
-2. Run the unit tests: `uv run pytest tests/ -v`
-3. Bump `PATCHED_UPSTREAM_VERSION` in `customization/version_check.py` to the new version.
-4. Run the integration tests to confirm SQL governance is still enforced.
+1. Add the upstream remote if you haven't already:
+   ```bash
+   git remote add upstream https://github.com/databricks-solutions/ai-dev-kit.git
+   ```
+
+2. Fetch upstream and create a sync branch:
+   ```bash
+   git fetch upstream
+   git checkout -b sync/upstream-$(cat VERSION | tr -d '[:space:]')
+   ```
+
+3. Preview what changed in the patched file before merging:
+   ```bash
+   git diff HEAD upstream/main -- databricks-tools-core/databricks_tools_core/sql/sql_utils/executor.py
+   ```
+   Check whether `SQLExecutor.__init__` or `.execute` signatures changed.
+   If so, update the patch wrappers in `customization/sql_executor_patch.py` now.
+   > **TODO:** Create a Cursor skill to automate this inspection and patch update.
+
+4. Merge upstream into the sync branch:
+   ```bash
+   git merge upstream/main
+   ```
+   Noom's changes live entirely in `noom-mcp-server/`, so conflicts outside
+   that directory are unexpected. Resolve any that appear, then commit.
+
+5. Run the unit tests: `uv run pytest tests/ -v`
+
+6. Bump `PATCHED_UPSTREAM_VERSION` in `customization/version_check.py` to the new version.
+
+7. Run the integration tests to confirm SQL governance is still enforced.
+
+8. Open a PR against `noom/databricks-ai-dev-kit` (not the upstream repo).

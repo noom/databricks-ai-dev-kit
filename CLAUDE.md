@@ -1,8 +1,9 @@
 # Noom — Databricks AI Dev Kit
 
-This is Noom's **staging fork** of [databricks-solutions/ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit).
-Its purpose is to extend the upstream Databricks MCP server with Noom-specific SQL governance
-controls before distributing it to engineers.
+This is Noom's **fork** of [databricks-solutions/ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit).
+
+Its purpose is to extend the upstream Databricks MCP server with Noom-specific SQL governance controls before distributing it to engineers.
+
 
 ## What Noom maintains here
 
@@ -12,8 +13,7 @@ controls before distributing it to engineers.
   - Service Principal SQL execution (all SQL runs as the governed SP, not the user)
   - Per-user `mcp_user:<email>` query tagging in `system.query.history`
 
-Everything else (`databricks-mcp-server/`, `databricks-tools-core/`, `databricks-skills/`, etc.)
-is upstream code and should not be modified here.
+Everything else (`databricks-mcp-server/`, `databricks-tools-core/`, `databricks-skills/`, etc.) is upstream code and should not be modified here.
 
 ## How to set up the MCP server (for engineers)
 
@@ -22,12 +22,12 @@ is upstream code and should not be modified here.
 git clone https://github.com/noom/databricks-ai-dev-kit.git
 cd databricks-ai-dev-kit/noom-mcp-server
 
-# 2. Authenticate to Databricks (OAuth — PAT tokens are rejected)
-databricks auth login --host https://<your-workspace>.cloud.databricks.com
+# 2. Authenticate to Databricks with OAuth (PAT tokens are rejected)
+databricks auth login --host https://noom-prod.cloud.databricks.com
 
 # 3. Create the env file
 cp .env.example .env
-# Edit .env: set DATABRICKS_HOST, DATABRICKS_MCP_SQL_HOST, DATABRICKS_WAREHOUSE_ID
+# Edit .env to set DATABRICKS_WAREHOUSE_ID
 
 # 4. Install dependencies
 uv sync
@@ -36,8 +36,7 @@ uv sync
 uv run --env-file .env python run.py
 ```
 
-See [`noom-mcp-server/README.md`](noom-mcp-server/README.md) for full setup instructions
-and [`noom-mcp-server/DEVELOPMENT.md`](noom-mcp-server/DEVELOPMENT.md) for contributing.
+See [`noom-mcp-server/README.md`](noom-mcp-server/README.md) for full setup instructions.
 
 ## Do NOT use the upstream installers
 
@@ -68,11 +67,8 @@ Add to your Cursor / Claude Desktop `mcp.json`:
 
 ## How to contribute
 
-Work only inside `noom-mcp-server/`. Open PRs against the `main` branch of
-`noom/databricks-ai-dev-kit` — **not** against the upstream
-`databricks-solutions/ai-dev-kit`. See [`noom-mcp-server/DEVELOPMENT.md`](noom-mcp-server/DEVELOPMENT.md)
-for the `gh pr create` command that targets the right repo.
+Work only inside `noom-mcp-server/`. See [`noom-mcp-server/DEVELOPMENT.md`](noom-mcp-server/DEVELOPMENT.md) for architecture, design rationale, and how to open PRs against the right repo.
 
-## Upgrading the upstream
+## Syncing the upstream
 
-See the "Upgrading the upstream" section in [`noom-mcp-server/README.md`](noom-mcp-server/README.md).
+See the "Sync the upstream" section in [`noom-mcp-server/README.md`](noom-mcp-server/README.md).
