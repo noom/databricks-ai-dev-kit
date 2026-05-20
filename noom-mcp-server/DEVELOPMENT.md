@@ -60,6 +60,24 @@ gh pr create --repo noom/databricks-ai-dev-kit --base main
 
 ---
 
+## Linting (pre-commit)
+
+Install the pre-commit hooks once after cloning:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Ruff will then run automatically on `noom-mcp-server/` files before every commit.
+To run manually across all files:
+
+```bash
+pre-commit run --all-files
+```
+
+---
+
 ## Running the test suite
 
 **Unit tests** (no credentials needed):
