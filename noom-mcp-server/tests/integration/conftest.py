@@ -27,6 +27,6 @@ def patches_applied() -> None:
 
     So the test session itself only succeeds under valid OAuth credentials.
     """
-    from noom_mcp.patches import apply_all_patches
+    from customization.patches import apply_all_patches
 
     apply_all_patches()

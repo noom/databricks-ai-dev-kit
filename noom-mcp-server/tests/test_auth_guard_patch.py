@@ -1,4 +1,4 @@
-"""Unit tests for noom_mcp.auth_guard_patch.
+"""Unit tests for customization.auth_guard_patch.
 
 get_workspace_client is imported lazily inside check_pat_rejected, so
 patch at the source module:
@@ -20,7 +20,7 @@ class TestCheckPatRejected:
 
     def test_pat_raises_runtime_error(self):
         """PAT auth_type triggers RuntimeError with clear message."""
-        from noom_mcp.auth_guard_patch import check_pat_rejected
+        from customization.auth_guard_patch import check_pat_rejected
 
         with patch(
             "databricks_tools_core.auth.get_workspace_client",
@@ -32,7 +32,7 @@ class TestCheckPatRejected:
 
     def test_oauth_browser_passes(self):
         """databricks-cli (browser OAuth) is accepted."""
-        from noom_mcp.auth_guard_patch import check_pat_rejected
+        from customization.auth_guard_patch import check_pat_rejected
 
         with patch(
             "databricks_tools_core.auth.get_workspace_client",
@@ -42,7 +42,7 @@ class TestCheckPatRejected:
 
     def test_oauth_m2m_passes(self):
         """oauth-m2m is accepted."""
-        from noom_mcp.auth_guard_patch import check_pat_rejected
+        from customization.auth_guard_patch import check_pat_rejected
 
         with patch(
             "databricks_tools_core.auth.get_workspace_client",
@@ -52,7 +52,7 @@ class TestCheckPatRejected:
 
     def test_api_failure_propagates(self):
         """SDK errors during the auth check re-raise so the server won't start."""
-        from noom_mcp.auth_guard_patch import check_pat_rejected
+        from customization.auth_guard_patch import check_pat_rejected
 
         mock_client = MagicMock()
         mock_client.current_user.me.side_effect = Exception("network error")

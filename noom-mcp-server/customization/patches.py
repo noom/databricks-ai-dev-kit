@@ -12,9 +12,9 @@ sql_executor_patch    SP client override + user identity tagging on SQLExecutor.
 
 import logging
 
-from noom_mcp.auth_guard_patch import check_pat_rejected as check_pat_rejected  # re-export
-from noom_mcp.sql_executor_patch import patch_sql_executor as patch_sql_executor  # re-export
-from noom_mcp.version_check import (  # re-export
+from customization.auth_guard_patch import check_pat_rejected as check_pat_rejected  # re-export
+from customization.sql_executor_patch import patch_sql_executor as patch_sql_executor  # re-export
+from customization.version_check import (  # re-export
     UpstreamChangedError as UpstreamChangedError,
     check_upstream_version as check_upstream_version,
 )

@@ -26,7 +26,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     stream=sys.stderr,
 )
-logger = logging.getLogger("noom_mcp")
+logger = logging.getLogger("customization")
 
 # ---------------------------------------------------------------------------
 # Step 1: Apply governance patches BEFORE the upstream server imports tools.
@@ -38,7 +38,7 @@ logger = logging.getLogger("noom_mcp")
 # workspace credentials to be configured in the environment.
 # ---------------------------------------------------------------------------
 
-from noom_mcp.patches import apply_all_patches, UpstreamChangedError  # noqa: E402
+from customization.patches import apply_all_patches, UpstreamChangedError  # noqa: E402
 
 try:
     apply_all_patches()

@@ -1,4 +1,4 @@
-"""Unit tests for noom_mcp.version_check."""
+"""Unit tests for customization.version_check."""
 
 import pytest
 
@@ -6,14 +6,14 @@ import pytest
 class TestCheckUpstreamVersion:
     def test_happy_path(self):
         """Current installed version matches the pin — no error."""
-        from noom_mcp.version_check import check_upstream_version
+        from customization.version_check import check_upstream_version
 
         check_upstream_version()  # must not raise
 
     def test_version_mismatch_raises(self):
         """Stale pin triggers UpstreamChangedError with actionable message."""
-        import noom_mcp.version_check as m
-        from noom_mcp.version_check import UpstreamChangedError, check_upstream_version
+        import customization.version_check as m
+        from customization.version_check import UpstreamChangedError, check_upstream_version
 
         original = m.PATCHED_UPSTREAM_VERSION
         m.PATCHED_UPSTREAM_VERSION = "0.0.0"

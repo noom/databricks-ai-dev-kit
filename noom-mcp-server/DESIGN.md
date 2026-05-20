@@ -20,7 +20,7 @@ noom-mcp-server/
 ├── .env.example          # required env vars
 ├── DESIGN.md             # this file
 ├── DEVELOPMENT.md        # admin setup, dev/CI credentials, test commands
-└── noom_mcp/
+└── customization/
     ├── __init__.py
     ├── patches.py          # orchestrator: calls apply_all_patches()
     ├── version_check.py    # upstream version pin + UpstreamChangedError

@@ -112,7 +112,7 @@ When a new upstream release lands (the repo `VERSION` file changes):
 
 1. Check whether `SQLExecutor.__init__` or `.execute` signatures changed in
    [`databricks-tools-core/databricks_tools_core/sql/sql_utils/executor.py`](../databricks-tools-core/databricks_tools_core/sql/sql_utils/executor.py).
-   Update the patch wrappers in `noom_mcp/sql_executor_patch.py` if needed.
+   Update the patch wrappers in `customization/sql_executor_patch.py` if needed.
 2. Run the unit tests: `uv run pytest tests/ -v`
-3. Bump `PATCHED_UPSTREAM_VERSION` in `noom_mcp/version_check.py` to the new version.
+3. Bump `PATCHED_UPSTREAM_VERSION` in `customization/version_check.py` to the new version.
 4. Run the integration tests to confirm SQL governance is still enforced.

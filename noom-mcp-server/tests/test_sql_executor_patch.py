@@ -1,4 +1,4 @@
-"""Unit tests for noom_mcp.sql_executor_patch.
+"""Unit tests for customization.sql_executor_patch.
 
 All tests mock Databricks SDK calls so no live workspace is needed.
 The SQLExecutor class-level patches are restored after each test that
@@ -7,7 +7,7 @@ applies them, so tests are fully isolated.
 Patching strategy
 -----------------
 sql_executor_patch.py imports helpers lazily inside functions.  This means
-``patch("noom_mcp.sql_executor_patch.X")`` only works for names that are
+``patch("customization.sql_executor_patch.X")`` only works for names that are
 defined at module level (e.g. ``get_sql_sp_client``, ``get_mcp_user_identity``,
 ``_fetch_sp_credentials_from_secrets``).
 
@@ -29,7 +29,7 @@ import pytest
 
 def _reset_sp_client_cache() -> None:
     """Reset the process-level SP client cache between tests."""
-    import noom_mcp.sql_executor_patch as m
+    import customization.sql_executor_patch as m
 
     m._sql_sp_client = None
 
@@ -60,7 +60,7 @@ class TestGetMcpUserIdentity:
             "databricks_tools_core.auth.get_current_username",
             return_value="alice@noom.com",
         ):
-            from noom_mcp.sql_executor_patch import get_mcp_user_identity
+            from customization.sql_executor_patch import get_mcp_user_identity
 
             assert get_mcp_user_identity() == "alice@noom.com"
 
@@ -71,7 +71,7 @@ class TestGetMcpUserIdentity:
             "databricks_tools_core.auth.get_current_username",
             return_value=None,
         ):
-            from noom_mcp.sql_executor_patch import get_mcp_user_identity
+            from customization.sql_executor_patch import get_mcp_user_identity
 
             assert get_mcp_user_identity() == "sp:my-sp-id"
 
@@ -82,7 +82,7 @@ class TestGetMcpUserIdentity:
             "databricks_tools_core.auth.get_current_username",
             return_value=None,
         ):
-            from noom_mcp.sql_executor_patch import get_mcp_user_identity
+            from customization.sql_executor_patch import get_mcp_user_identity
 
             assert get_mcp_user_identity() == "unknown"
 
@@ -103,11 +103,11 @@ class TestPatchSqlExecutorWarehouseId:
     def test_patched_init_uses_configured_warehouse(self):
         """After patching, SQLExecutor always uses the configured warehouse ID."""
         from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
-        from noom_mcp.sql_executor_patch import patch_sql_executor
+        from customization.sql_executor_patch import patch_sql_executor
 
         mock_sp = MagicMock()
-        with patch("noom_mcp.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("noom_mcp.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
+             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-caller-supplied", client=None)
@@ -116,11 +116,11 @@ class TestPatchSqlExecutorWarehouseId:
     def test_patched_init_ignores_caller_supplied_warehouse(self):
         """Configured warehouse overrides whatever warehouse the AI passes in."""
         from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
-        from noom_mcp.sql_executor_patch import patch_sql_executor
+        from customization.sql_executor_patch import patch_sql_executor
 
         mock_sp = MagicMock()
-        with patch("noom_mcp.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("noom_mcp.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
+             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-some-random-id", client=None)
@@ -130,13 +130,13 @@ class TestPatchSqlExecutorWarehouseId:
     def test_get_sql_warehouse_id_reads_env(self, monkeypatch):
         """get_sql_warehouse_id returns the env var value."""
         monkeypatch.setenv("DATABRICKS_WAREHOUSE_ID", "wh-abc123")
-        from noom_mcp.sql_executor_patch import get_sql_warehouse_id
+        from customization.sql_executor_patch import get_sql_warehouse_id
         assert get_sql_warehouse_id() == "wh-abc123"
 
     def test_get_sql_warehouse_id_raises_when_unset(self, monkeypatch):
         """get_sql_warehouse_id raises RuntimeError when env var is missing."""
         monkeypatch.delenv("DATABRICKS_WAREHOUSE_ID", raising=False)
-        from noom_mcp.sql_executor_patch import get_sql_warehouse_id
+        from customization.sql_executor_patch import get_sql_warehouse_id
         with pytest.raises(RuntimeError, match="DATABRICKS_WAREHOUSE_ID is not set"):
             get_sql_warehouse_id()
 
@@ -152,11 +152,11 @@ class TestPatchSqlExecutorSpClient:
     def test_patched_init_uses_sp_client(self):
         """After patching, SQLExecutor always uses the SP client."""
         from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
-        from noom_mcp.sql_executor_patch import patch_sql_executor
+        from customization.sql_executor_patch import patch_sql_executor
 
         mock_sp = MagicMock()
-        with patch("noom_mcp.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("noom_mcp.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
+             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-123", client=None)
@@ -165,13 +165,13 @@ class TestPatchSqlExecutorSpClient:
     def test_patched_init_ignores_caller_supplied_client(self):
         """SP client overrides any client the caller passes in."""
         from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
-        from noom_mcp.sql_executor_patch import patch_sql_executor
+        from customization.sql_executor_patch import patch_sql_executor
 
         caller_client = MagicMock(name="caller_client")
         sp_client = MagicMock(name="sp_client")
 
-        with patch("noom_mcp.sql_executor_patch.get_sql_sp_client", return_value=sp_client), \
-             patch("noom_mcp.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
+        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=sp_client), \
+             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"):
             patch_sql_executor()
             executor = SQLExecutor.__new__(SQLExecutor)
             SQLExecutor.__init__(executor, "wh-123", client=caller_client)
@@ -219,7 +219,7 @@ class TestPatchSqlExecutorIdentityTagging:
     def test_patched_execute_injects_tag_and_calls_through(self):
         """End-to-end: patched execute injects tag and calls original."""
         from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
-        from noom_mcp.sql_executor_patch import patch_sql_executor
+        from customization.sql_executor_patch import patch_sql_executor
 
         received: dict = {}
         mock_sp = MagicMock()
@@ -237,9 +237,9 @@ class TestPatchSqlExecutorIdentityTagging:
 
         # Keep mocks active for the actual call — get_mcp_user_identity is
         # resolved at call time, not at patch-install time.
-        with patch("noom_mcp.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("noom_mcp.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"), \
-             patch("noom_mcp.sql_executor_patch.get_mcp_user_identity", return_value="bob@noom.com"):
+        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
+             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"), \
+             patch("customization.sql_executor_patch.get_mcp_user_identity", return_value="bob@noom.com"):
             patch_sql_executor()
 
             executor = SQLExecutor.__new__(SQLExecutor)
@@ -253,7 +253,7 @@ class TestPatchSqlExecutorIdentityTagging:
     def test_patched_execute_no_existing_tags(self):
         """Patched execute produces only the mcp_user tag when none given."""
         from databricks_tools_core.sql.sql_utils.executor import SQLExecutor
-        from noom_mcp.sql_executor_patch import patch_sql_executor
+        from customization.sql_executor_patch import patch_sql_executor
 
         received: dict = {}
         mock_sp = MagicMock()
@@ -267,9 +267,9 @@ class TestPatchSqlExecutorIdentityTagging:
 
         SQLExecutor.execute = _spy
 
-        with patch("noom_mcp.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
-             patch("noom_mcp.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"), \
-             patch("noom_mcp.sql_executor_patch.get_mcp_user_identity", return_value="carol@noom.com"):
+        with patch("customization.sql_executor_patch.get_sql_sp_client", return_value=mock_sp), \
+             patch("customization.sql_executor_patch.get_sql_warehouse_id", return_value="wh-prod"), \
+             patch("customization.sql_executor_patch.get_mcp_user_identity", return_value="carol@noom.com"):
             patch_sql_executor()
 
             executor = SQLExecutor.__new__(SQLExecutor)
@@ -306,7 +306,7 @@ class TestFetchSpCredentialsFromSecrets:
             "databricks_tools_core.auth.get_workspace_client",
             return_value=mock_client,
         ):
-            from noom_mcp.sql_executor_patch import _fetch_sp_credentials_from_secrets
+            from customization.sql_executor_patch import _fetch_sp_credentials_from_secrets
 
             client_id, client_secret = _fetch_sp_credentials_from_secrets()
 
@@ -326,7 +326,7 @@ class TestFetchSpCredentialsFromSecrets:
             "databricks_tools_core.auth.get_workspace_client",
             return_value=mock_client,
         ):
-            from noom_mcp.sql_executor_patch import _fetch_sp_credentials_from_secrets
+            from customization.sql_executor_patch import _fetch_sp_credentials_from_secrets
 
             _fetch_sp_credentials_from_secrets()
 
@@ -344,7 +344,7 @@ class TestFetchSpCredentialsFromSecrets:
             "databricks_tools_core.auth.get_workspace_client",
             return_value=mock_client,
         ):
-            from noom_mcp.sql_executor_patch import _fetch_sp_credentials_from_secrets
+            from customization.sql_executor_patch import _fetch_sp_credentials_from_secrets
 
             with pytest.raises(RuntimeError, match="Failed to fetch secret"):
                 _fetch_sp_credentials_from_secrets()
@@ -361,7 +361,7 @@ class TestFetchSpCredentialsFromSecrets:
             "databricks_tools_core.auth.get_workspace_client",
             return_value=mock_client,
         ):
-            from noom_mcp.sql_executor_patch import _fetch_sp_credentials_from_secrets
+            from customization.sql_executor_patch import _fetch_sp_credentials_from_secrets
 
             with pytest.raises(RuntimeError, match="is empty"):
                 _fetch_sp_credentials_from_secrets()
@@ -384,12 +384,12 @@ class TestBuildSqlSpClient:
         monkeypatch.setenv("DATABRICKS_MCP_SQL_HOST", "https://noom-prod.cloud.databricks.com")
 
         with patch(
-            "noom_mcp.sql_executor_patch._fetch_sp_credentials_from_secrets",
+            "customization.sql_executor_patch._fetch_sp_credentials_from_secrets",
             return_value=("secrets-id", "secrets-secret"),
         ) as mock_fetch, \
              patch("databricks_tools_core.identity.tag_client", side_effect=lambda c: c), \
              patch("databricks.sdk.WorkspaceClient", return_value=MagicMock()):
-            from noom_mcp.sql_executor_patch import _build_sql_sp_client
+            from customization.sql_executor_patch import _build_sql_sp_client
 
             _build_sql_sp_client()
             mock_fetch.assert_called_once()
@@ -401,11 +401,11 @@ class TestBuildSqlSpClient:
         monkeypatch.setenv("DATABRICKS_MCP_SQL_HOST", "https://noom-prod.cloud.databricks.com")
 
         with patch(
-            "noom_mcp.sql_executor_patch._fetch_sp_credentials_from_secrets",
+            "customization.sql_executor_patch._fetch_sp_credentials_from_secrets",
         ) as mock_fetch, \
              patch("databricks_tools_core.identity.tag_client", side_effect=lambda c: c), \
              patch("databricks.sdk.WorkspaceClient", return_value=MagicMock()):
-            from noom_mcp.sql_executor_patch import _build_sql_sp_client
+            from customization.sql_executor_patch import _build_sql_sp_client
 
             _build_sql_sp_client()
             mock_fetch.assert_not_called()
@@ -416,7 +416,7 @@ class TestBuildSqlSpClient:
         monkeypatch.delenv("DATABRICKS_MCP_SQL_CLIENT_SECRET", raising=False)
         monkeypatch.setenv("DATABRICKS_MCP_SQL_HOST", "https://noom-prod.cloud.databricks.com")
 
-        from noom_mcp.sql_executor_patch import _build_sql_sp_client
+        from customization.sql_executor_patch import _build_sql_sp_client
 
         with pytest.raises(RuntimeError, match="DATABRICKS_MCP_SQL_CLIENT_SECRET is missing"):
             _build_sql_sp_client()
@@ -427,7 +427,7 @@ class TestBuildSqlSpClient:
         monkeypatch.setenv("DATABRICKS_MCP_SQL_CLIENT_SECRET", "env-secret")
         monkeypatch.delenv("DATABRICKS_MCP_SQL_HOST", raising=False)
 
-        from noom_mcp.sql_executor_patch import _build_sql_sp_client
+        from customization.sql_executor_patch import _build_sql_sp_client
 
         with pytest.raises(RuntimeError, match="DATABRICKS_MCP_SQL_HOST is not set"):
             _build_sql_sp_client()

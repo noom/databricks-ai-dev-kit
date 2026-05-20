@@ -26,7 +26,7 @@ databricks-tools-core = { path = "../databricks-tools-core", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["noom_mcp*"]
+include = ["customization*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
