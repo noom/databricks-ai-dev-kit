@@ -241,7 +241,7 @@ mcp==1.27.0
     #   fastmcp
 mdurl==0.1.2
     # via markdown-it-py
-mlflow==3.10.1
+mlflow==3.11.1
     # via databricks-builder-app
 mlflow-skinny==3.10.1
     # via mlflow
