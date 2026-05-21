@@ -1,64 +1,127 @@
 """Unit tests for customization.auth_guard_patch.
 
-get_workspace_client is imported lazily inside check_pat_rejected, so
-patch at the source module:
-  - databricks_tools_core.auth.get_workspace_client
+All tests mock WorkspaceClient so no live Databricks connection is needed.
+
+Patching strategy
+-----------------
+ensure_oauth_authenticated imports WorkspaceClient lazily inside the function.
+Patch at the source:  databricks.sdk.WorkspaceClient
 """
 
-from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-class TestCheckPatRejected:
-    def _mock_client(self, auth_type: Optional[str]) -> MagicMock:
-        client = MagicMock()
-        client.config.auth_type = auth_type
-        client.current_user.me.return_value = MagicMock(user_name="test@noom.com")
-        return client
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-    def test_pat_raises_runtime_error(self):
-        """PAT auth_type triggers RuntimeError with clear message."""
-        from customization.auth_guard_patch import check_pat_rejected
 
-        with patch(
-            "databricks_tools_core.auth.get_workspace_client",
-            return_value=self._mock_client("pat"),
-        ):
-            with pytest.raises(RuntimeError) as exc_info:
-                check_pat_rejected()
-            assert "PAT authentication is not permitted" in str(exc_info.value)
+class TestEnsureOauthAuthenticated:
+    """Tests for ensure_oauth_authenticated()."""
 
-    def test_oauth_browser_passes(self):
-        """databricks-cli (browser OAuth) is accepted."""
-        from customization.auth_guard_patch import check_pat_rejected
-
-        with patch(
-            "databricks_tools_core.auth.get_workspace_client",
-            return_value=self._mock_client("databricks-cli"),
-        ):
-            check_pat_rejected()  # must not raise
-
-    def test_oauth_m2m_passes(self):
-        """oauth-m2m is accepted."""
-        from customization.auth_guard_patch import check_pat_rejected
-
-        with patch(
-            "databricks_tools_core.auth.get_workspace_client",
-            return_value=self._mock_client("oauth-m2m"),
-        ):
-            check_pat_rejected()  # must not raise
-
-    def test_api_failure_propagates(self):
-        """SDK errors during the auth check re-raise so the server won't start."""
-        from customization.auth_guard_patch import check_pat_rejected
+    def test_cached_token_starts_silently(self):
+        """Valid cached token: current_user.me() succeeds, no error raised."""
+        mock_me = MagicMock()
+        mock_me.user_name = "alice@noom.com"
 
         mock_client = MagicMock()
-        mock_client.current_user.me.side_effect = Exception("network error")
+        mock_client.current_user.me.return_value = mock_me
+
+        with patch("databricks.sdk.WorkspaceClient", return_value=mock_client) as mock_wc:
+            from customization.auth_guard_patch import ensure_oauth_authenticated
+
+            ensure_oauth_authenticated()
+
+        mock_wc.assert_called_once_with(
+            host=mock_wc.call_args.kwargs.get(
+                "host", mock_wc.call_args.args[0] if mock_wc.call_args.args else ""
+            ),
+            auth_type="external-browser",
+        )
+        mock_client.current_user.me.assert_called_once()
+
+    def test_browser_flow_succeeds(self):
+        """No cached token but browser flow completes: server starts normally."""
+        mock_me = MagicMock()
+        mock_me.user_name = "bob@noom.com"
+
+        mock_client = MagicMock()
+        mock_client.current_user.me.return_value = mock_me
+
+        # WorkspaceClient construction itself triggers the browser flow
+        # when auth_type="external-browser" and no cache exists.
+        # We model this as: construction succeeds, me() succeeds.
+        with patch("databricks.sdk.WorkspaceClient", return_value=mock_client):
+            from customization.auth_guard_patch import ensure_oauth_authenticated
+
+            ensure_oauth_authenticated()  # must not raise
+
+        mock_client.current_user.me.assert_called_once()
+
+    def test_browser_unavailable_raises_runtime_error(self):
+        """Browser cannot open (headless/SSH): RuntimeError with manual instructions."""
         with patch(
-            "databricks_tools_core.auth.get_workspace_client",
-            return_value=mock_client,
+            "databricks.sdk.WorkspaceClient",
+            side_effect=Exception("cannot open browser: no display"),
         ):
-            with pytest.raises(Exception, match="network error"):
-                check_pat_rejected()
+            from customization.auth_guard_patch import ensure_oauth_authenticated
+
+            with pytest.raises(RuntimeError) as exc_info:
+                ensure_oauth_authenticated()
+
+        msg = str(exc_info.value)
+        assert "databricks auth login" in msg
+        assert "restart the MCP server" in msg
+
+    def test_me_call_fails_raises_runtime_error(self):
+        """WorkspaceClient constructs but current_user.me() fails: RuntimeError raised."""
+        mock_client = MagicMock()
+        mock_client.current_user.me.side_effect = Exception("network error")
+
+        with patch("databricks.sdk.WorkspaceClient", return_value=mock_client):
+            from customization.auth_guard_patch import ensure_oauth_authenticated
+
+            with pytest.raises(RuntimeError) as exc_info:
+                ensure_oauth_authenticated()
+
+        assert "databricks auth login" in str(exc_info.value)
+
+    def test_uses_databricks_host_env(self, monkeypatch):
+        """DATABRICKS_HOST env var is passed as host to WorkspaceClient."""
+        monkeypatch.setenv("DATABRICKS_HOST", "https://test.cloud.databricks.com")
+
+        mock_me = MagicMock()
+        mock_me.user_name = "carol@noom.com"
+        mock_client = MagicMock()
+        mock_client.current_user.me.return_value = mock_me
+
+        with patch("databricks.sdk.WorkspaceClient", return_value=mock_client) as mock_wc:
+            from customization.auth_guard_patch import ensure_oauth_authenticated
+
+            ensure_oauth_authenticated()
+
+        call_kwargs = mock_wc.call_args.kwargs
+        assert call_kwargs.get("host") == "https://test.cloud.databricks.com"
+        assert call_kwargs.get("auth_type") == "external-browser"
+
+    def test_pat_token_in_env_does_not_block(self, monkeypatch):
+        """DATABRICKS_TOKEN in environment does not prevent startup.
+
+        The explicit auth_type="external-browser" bypasses env-var credentials,
+        so a PAT in DATABRICKS_TOKEN is silently ignored.
+        """
+        monkeypatch.setenv("DATABRICKS_TOKEN", "dapi-some-pat-token")
+
+        mock_me = MagicMock()
+        mock_me.user_name = "dave@noom.com"
+        mock_client = MagicMock()
+        mock_client.current_user.me.return_value = mock_me
+
+        with patch("databricks.sdk.WorkspaceClient", return_value=mock_client):
+            from customization.auth_guard_patch import ensure_oauth_authenticated
+
+            ensure_oauth_authenticated()  # must not raise
+
+        mock_client.current_user.me.assert_called_once()

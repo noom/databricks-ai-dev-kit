@@ -6,13 +6,15 @@ three focused sub-modules and calls them in the required order.
 Sub-modules
 -----------
 version_check         Upstream version pin — abort if the upstream has changed.
-auth_guard_patch      PAT rejection — abort if the user authenticated with a PAT.
+auth_guard_patch      OAuth enforcement — opens browser if no cached token exists.
 sql_executor_patch    SP client override + user identity tagging on SQLExecutor.
 """
 
 import logging
 
-from customization.auth_guard_patch import check_pat_rejected as check_pat_rejected  # re-export
+from customization.auth_guard_patch import (
+    ensure_oauth_authenticated as ensure_oauth_authenticated,
+)  # re-export
 from customization.sql_executor_patch import patch_sql_executor as patch_sql_executor  # re-export
 from customization.version_check import (  # re-export
     UpstreamChangedError as UpstreamChangedError,
@@ -34,10 +36,11 @@ def apply_all_patches() -> None:
        if the installed upstream doesn't match the validated version.
     2. patch_sql_executor — installs class-level patches on SQLExecutor for
        SP client override and user identity tagging.
-    3. check_pat_rejected — validates startup credentials via a live API call;
-       fails immediately if auth is PAT.
+    3. ensure_oauth_authenticated — validates the calling user's identity via
+       OAuth; opens a browser if no cached token exists; fails on headless
+       systems with instructions to run 'databricks auth login'.
     """
     check_upstream_version()
     patch_sql_executor()
-    check_pat_rejected()
+    ensure_oauth_authenticated()
     logger.info("All Noom MCP governance patches applied successfully")
