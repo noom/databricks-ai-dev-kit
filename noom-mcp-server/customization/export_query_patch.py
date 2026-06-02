@@ -61,7 +61,7 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -221,21 +221,32 @@ def resolve_export_path(output_path: str, base_dir: Optional[Path] = None) -> Pa
 # ---------------------------------------------------------------------------
 
 
-def _collect_external_links(client, statement_id: str, first_result) -> List[Any]:
-    """Walk the chunk chain, returning all external links in row order."""
-    links: List[Any] = []
+def _iter_external_links(client, statement_id: str, first_result) -> Iterator[Any]:
+    """Yield external links in row order, following the chunk chain lazily.
+
+    Laziness is deliberate. The presigned ``external_link`` URLs are short-lived
+    (Databricks issues them per response and they expire — observed ~15 min). If
+    we collected every link up front and only then downloaded, a long multi-chunk
+    export could outlive the links issued first. By yielding each link as its
+    chunk is fetched — and having the caller download it immediately — every URL
+    is freshly issued when used, so the at-risk window is one chunk, not the
+    whole export.
+
+    Within a single response, links are ordered by ``chunk_index`` (the chunk
+    chain itself is ordered via ``next_chunk_index``).
+    """
     result = first_result
     while result is not None and result.external_links:
-        links.extend(result.external_links)
+        for link in sorted(
+            result.external_links, key=lambda link: (link.chunk_index or 0, link.row_offset or 0)
+        ):
+            yield link
         nxt = result.next_chunk_index
         if nxt is None:
             break
         result = client.statement_execution.get_statement_result_chunk_n(
             statement_id=statement_id, chunk_index=nxt
         )
-    # Order defensively by chunk_index (fallback row_offset) so rows are in order.
-    links.sort(key=lambda link: (link.chunk_index or 0, link.row_offset or 0))
-    return links
 
 
 def _download_link(link) -> bytes:
@@ -251,17 +262,21 @@ def _download_link(link) -> bytes:
         return resp.read()
 
 
-def _write_csv(dest: Path, columns: List[str], links: List[Any]) -> None:
+def _write_csv(dest: Path, columns: List[str], links: Iterable[Any]) -> None:
     """Stream each CSV chunk's bytes to ``dest`` in row order, atomically.
 
     Databricks EXTERNAL_LINKS + CSV chunks already include the column header
     (in the first chunk), so the chunk bytes are written as-is — synthesizing a
     header would duplicate it.
 
-    The one exception is an empty result: Databricks returns no external links,
-    so there are no bytes to stream. In that case a header-only CSV is written
-    (derived from the manifest schema) so the file is still valid and carries
-    the column names for downstream tools.
+    ``links`` is an iterable, consumed lazily: each link is downloaded as it is
+    produced, so when it is the lazy chunk-chain generator
+    (``_iter_external_links``) the presigned URL is freshly issued at download
+    time rather than minutes earlier.
+
+    The one exception is an empty result: the iterable yields nothing, so a
+    header-only CSV is written (derived from the manifest schema) so the file is
+    still valid and carries the column names for downstream tools.
 
     Atomicity: the data is streamed to a temp file in the destination directory
     and only ``os.replace``-d into place after the *last* chunk is written. If a
@@ -274,12 +289,13 @@ def _write_csv(dest: Path, columns: List[str], links: List[Any]) -> None:
     fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".part")
     tmp = Path(tmp_name)
     try:
+        wrote_any = False
         with os.fdopen(fd, "wb") as fh:
-            if not links:
+            for link in links:
+                fh.write(_download_link(link))
+                wrote_any = True
+            if not wrote_any:
                 fh.write(_csv_header_line(columns).encode("utf-8"))
-            else:
-                for link in links:
-                    fh.write(_download_link(link))
         os.replace(tmp, dest)  # atomic on the same filesystem
     except BaseException:
         # Includes timeouts/cancellation: never leave a partial file behind,
@@ -299,6 +315,24 @@ def _csv_header_line(columns: List[str]) -> str:
 # ---------------------------------------------------------------------------
 # Tool implementation
 # ---------------------------------------------------------------------------
+
+
+def _clamp_statement_timeout(timeout: int) -> int:
+    """Bound the per-call statement timeout by the tool's wall-clock ceiling.
+
+    A caller-supplied timeout above ``EXPORT_TOOL_TIMEOUT_CEILING`` would let
+    FastMCP abort the tool call before the poll loop's own cancellation fires,
+    leaving the statement running on the warehouse. Clamping keeps our cancel
+    within the ceiling. Logs when a value is reduced.
+    """
+    if timeout > EXPORT_TOOL_TIMEOUT_CEILING:
+        logger.warning(
+            "export timeout %ss exceeds the %ss ceiling; clamping.",
+            timeout,
+            EXPORT_TOOL_TIMEOUT_CEILING,
+        )
+        return EXPORT_TOOL_TIMEOUT_CEILING
+    return timeout
 
 
 def _run_export(
@@ -324,6 +358,12 @@ def _run_export(
     fmt = fmt.lower()
     if fmt not in _SUPPORTED_FORMATS:
         raise ValueError(f"Unsupported format {fmt!r}. Supported: {', '.join(_SUPPORTED_FORMATS)}.")
+
+    # Clamp the per-call timeout to the tool's wall-clock ceiling (see
+    # _clamp_statement_timeout): a value above the ceiling would let FastMCP
+    # abort the tool call before our own cancellation fires, orphaning the
+    # statement on the warehouse. The poll loop below cancels at this bound.
+    timeout = _clamp_statement_timeout(timeout)
 
     # Clear out files past the retention window before writing a new one.
     sweep_old_exports()
@@ -385,7 +425,10 @@ def _run_export(
     )
     row_count = (manifest.total_row_count if manifest else None) or 0
 
-    links = _collect_external_links(client, statement_id, status.result)
+    # Lazy generator: each chunk's presigned link is fetched and downloaded
+    # just-in-time (see _iter_external_links / _write_csv), so links don't age
+    # out during a long multi-chunk download.
+    links = _iter_external_links(client, statement_id, status.result)
     _write_csv(dest, columns, links)
 
     return {

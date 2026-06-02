@@ -90,23 +90,54 @@ class _FakeClient:
         self.statement_execution = _SE()
 
 
-def test_collect_external_links_follows_chunk_chain():
+def test_iter_external_links_follows_chunk_chain():
     link0 = _FakeLink(0, b"a\n", next_chunk_index=1)
     link1 = _FakeLink(1, b"b\n", next_chunk_index=None)
     first = _FakeResult([link0], next_chunk_index=1)
     second = _FakeResult([link1], next_chunk_index=None)
     client = _FakeClient({1: second})
 
-    links = ep._collect_external_links(client, "stmt-1", first)
+    links = list(ep._iter_external_links(client, "stmt-1", first))
     assert [link.chunk_index for link in links] == [0, 1]
 
 
-def test_collect_external_links_orders_out_of_order_chunks():
+def test_iter_external_links_orders_within_result():
     link_b = _FakeLink(1, b"b\n", row_offset=10)
     link_a = _FakeLink(0, b"a\n", row_offset=0)
     first = _FakeResult([link_b, link_a], next_chunk_index=None)
-    links = ep._collect_external_links(_FakeClient({}), "stmt-1", first)
+    links = list(ep._iter_external_links(_FakeClient({}), "stmt-1", first))
     assert [link.chunk_index for link in links] == [0, 1]
+
+
+def test_iter_external_links_is_lazy():
+    # The next chunk must not be fetched until the previous one is consumed —
+    # this is what keeps presigned links fresh during a long download.
+    import types
+
+    link0 = _FakeLink(0, b"a\n", next_chunk_index=1)
+    link1 = _FakeLink(1, b"b\n", next_chunk_index=None)
+    first = _FakeResult([link0], next_chunk_index=1)
+
+    fetched = []
+
+    class _TrackingClient:
+        def __init__(self):
+            outer = self
+
+            class _SE:
+                def get_statement_result_chunk_n(_self, statement_id, chunk_index):
+                    fetched.append(chunk_index)
+                    return _FakeResult([link1], next_chunk_index=None)
+
+            self.statement_execution = _SE()
+            _ = outer
+
+    gen = ep._iter_external_links(_TrackingClient(), "stmt-1", first)
+    assert isinstance(gen, types.GeneratorType)
+    assert next(gen).chunk_index == 0
+    assert fetched == []  # chunk 1 NOT fetched until we ask for the next link
+    assert next(gen).chunk_index == 1
+    assert fetched == [1]
 
 
 def test_write_csv_streams_chunk_bytes_verbatim(tmp_path, monkeypatch):
@@ -172,6 +203,18 @@ def test_write_csv_failure_creates_no_destination(tmp_path, monkeypatch):
 
     assert not dest.exists()
     assert list(tmp_path.iterdir()) == []  # temp cleaned up
+
+
+# ---------------------------------------------------------------------------
+# Timeout clamp
+# ---------------------------------------------------------------------------
+
+
+def test_clamp_statement_timeout():
+    ceiling = ep.EXPORT_TOOL_TIMEOUT_CEILING
+    assert ep._clamp_statement_timeout(ceiling + 5000) == ceiling  # over → clamped
+    assert ep._clamp_statement_timeout(120) == 120  # under → unchanged
+    assert ep._clamp_statement_timeout(ceiling) == ceiling  # exactly → unchanged
 
 
 # ---------------------------------------------------------------------------
