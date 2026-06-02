@@ -75,6 +75,19 @@ into context.
    (default `~/databricks-mcp-exports`); `..` traversal and absolute paths that
    escape the base are rejected.
 
+### Data lifecycle
+There are two distinct "CSV" artifacts; only one is ours to manage.
+
+| Artifact | Location | Lifecycle | Owner |
+|---|---|---|---|
+| Cloud-fetch staging | Databricks-managed cloud storage | Transient — presigned links expire in ~15 min (measured); the staged result is held only briefly under Databricks' statement-result retention, then purged | **Databricks** — we don't choose the path, create a table/volume, or extend it |
+| Exported `.csv` | Engineer's local disk (`DATABRICKS_MCP_EXPORT_DIR`) | Deleted after `DATABRICKS_MCP_EXPORT_RETENTION_DAYS` (default 7); swept on startup and before each export | **This tool** |
+
+We persist nothing durable or self-owned in Databricks. The only artifact we
+own is the local file, and because exports can contain prod PII it is **not**
+retained indefinitely: `sweep_old_exports()` removes files older than the
+retention window (set the env var to `0` to disable).
+
 ### Governing principle
 The MCP layer is a **control plane, not a data plane.** It orchestrates and
 passes *handles* (a table name, or a file path); bulk bytes move

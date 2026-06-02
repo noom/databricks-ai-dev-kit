@@ -136,6 +136,59 @@ def test_write_csv_empty_result_writes_header_only(tmp_path):
     assert dest.read_text() == "id,name\n"
 
 
+# ---------------------------------------------------------------------------
+# Retention sweep
+# ---------------------------------------------------------------------------
+
+
+def _make_aged_file(path, age_days):
+    import os
+    import time
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x")
+    mtime = time.time() - age_days * 86400
+    os.utime(path, (mtime, mtime))
+
+
+def test_sweep_removes_old_keeps_recent(tmp_path):
+    old = tmp_path / "old.csv"
+    recent = tmp_path / "recent.csv"
+    _make_aged_file(old, age_days=10)
+    _make_aged_file(recent, age_days=1)
+
+    removed = ep.sweep_old_exports(base_dir=tmp_path, retention_days=7)
+
+    assert removed == 1
+    assert not old.exists()
+    assert recent.exists()
+
+
+def test_sweep_disabled_when_retention_not_positive(tmp_path):
+    old = tmp_path / "old.csv"
+    _make_aged_file(old, age_days=999)
+    assert ep.sweep_old_exports(base_dir=tmp_path, retention_days=0) == 0
+    assert old.exists()
+
+
+def test_sweep_prunes_empty_subdirs(tmp_path):
+    nested = tmp_path / "sub" / "deep.csv"
+    _make_aged_file(nested, age_days=30)
+    ep.sweep_old_exports(base_dir=tmp_path, retention_days=7)
+    assert not nested.exists()
+    assert not (tmp_path / "sub").exists()  # emptied dir pruned
+    assert tmp_path.exists()  # base dir never removed
+
+
+def test_get_retention_days_default_and_override(monkeypatch):
+    monkeypatch.delenv("DATABRICKS_MCP_EXPORT_RETENTION_DAYS", raising=False)
+    assert ep.get_export_retention_days() == ep._DEFAULT_RETENTION_DAYS
+    monkeypatch.setenv("DATABRICKS_MCP_EXPORT_RETENTION_DAYS", "3")
+    assert ep.get_export_retention_days() == 3
+    monkeypatch.setenv("DATABRICKS_MCP_EXPORT_RETENTION_DAYS", "garbage")
+    assert ep.get_export_retention_days() == ep._DEFAULT_RETENTION_DAYS  # falls back
+
+
 def test_download_link_applies_http_headers(monkeypatch):
     captured = {}
 
