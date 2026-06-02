@@ -57,6 +57,7 @@ traversal that escape the base are rejected.
 import csv
 import logging
 import os
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -251,7 +252,7 @@ def _download_link(link) -> bytes:
 
 
 def _write_csv(dest: Path, columns: List[str], links: List[Any]) -> None:
-    """Stream each CSV chunk's bytes to ``dest`` in row order.
+    """Stream each CSV chunk's bytes to ``dest`` in row order, atomically.
 
     Databricks EXTERNAL_LINKS + CSV chunks already include the column header
     (in the first chunk), so the chunk bytes are written as-is — synthesizing a
@@ -261,14 +262,30 @@ def _write_csv(dest: Path, columns: List[str], links: List[Any]) -> None:
     so there are no bytes to stream. In that case a header-only CSV is written
     (derived from the manifest schema) so the file is still valid and carries
     the column names for downstream tools.
+
+    Atomicity: the data is streamed to a temp file in the destination directory
+    and only ``os.replace``-d into place after the *last* chunk is written. If a
+    chunk download fails (or the tool's wall-clock ceiling fires mid-stream), the
+    temp file is removed and ``dest`` is left untouched — never a partial or
+    empty file at the real path. A half-written CSV that looks complete is
+    exactly the silent corruption this tool exists to prevent.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with open(dest, "wb") as fh:
-        if not links:
-            fh.write(_csv_header_line(columns).encode("utf-8"))
-            return
-        for link in links:
-            fh.write(_download_link(link))
+    fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".part")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            if not links:
+                fh.write(_csv_header_line(columns).encode("utf-8"))
+            else:
+                for link in links:
+                    fh.write(_download_link(link))
+        os.replace(tmp, dest)  # atomic on the same filesystem
+    except BaseException:
+        # Includes timeouts/cancellation: never leave a partial file behind,
+        # and never clobber a prior good export at `dest`.
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _csv_header_line(columns: List[str]) -> str:

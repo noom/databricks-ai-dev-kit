@@ -136,6 +136,44 @@ def test_write_csv_empty_result_writes_header_only(tmp_path):
     assert dest.read_text() == "id,name\n"
 
 
+def test_write_csv_failure_preserves_prior_file_and_leaves_no_partial(tmp_path, monkeypatch):
+    # A mid-stream chunk failure must not clobber a prior good export, and must
+    # leave no partial/temp file behind. (Atomic write: temp + os.replace.)
+    dest = tmp_path / "out.csv"
+    dest.write_text("PRIOR GOOD DATA\n")
+
+    calls = {"n": 0}
+
+    def flaky(link):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("chunk download failed")
+        return link._payload
+
+    monkeypatch.setattr(ep, "_download_link", flaky)
+    links = [_FakeLink(0, b"id,name\n1,a\n"), _FakeLink(1, b"2,b\n")]
+
+    with pytest.raises(RuntimeError, match="chunk download failed"):
+        ep._write_csv(dest, ["id", "name"], links)
+
+    assert dest.read_text() == "PRIOR GOOD DATA\n"  # untouched
+    assert [p.name for p in tmp_path.iterdir()] == ["out.csv"]  # no .part leftover
+
+
+def test_write_csv_failure_creates_no_destination(tmp_path, monkeypatch):
+    # If dest didn't exist and the write fails, no file should appear at dest.
+    dest = tmp_path / "new.csv"
+    monkeypatch.setattr(
+        ep, "_download_link", lambda link: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        ep._write_csv(dest, ["id"], [_FakeLink(0, b"x")])
+
+    assert not dest.exists()
+    assert list(tmp_path.iterdir()) == []  # temp cleaned up
+
+
 # ---------------------------------------------------------------------------
 # Retention sweep
 # ---------------------------------------------------------------------------
