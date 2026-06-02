@@ -122,9 +122,7 @@ def resolve_export_path(output_path: str, base_dir: Optional[Path] = None) -> Pa
     if base not in resolved.parents:
         # Either it escapes the base dir, or it *is* the base dir (no filename).
         if resolved == base:
-            raise ValueError(
-                "output_path must include a filename, not just the export directory."
-            )
+            raise ValueError("output_path must include a filename, not just the export directory.")
         raise ValueError(
             f"output_path {output_path!r} resolves outside the export directory "
             f"({base}). Writes are confined to that directory; use a relative path "
