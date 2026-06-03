@@ -188,17 +188,23 @@ def get_sql_warehouse_id() -> str:
 def get_mcp_user_identity() -> str:
     """Return the calling user's identity string for SQL query tagging.
 
-    Resolution order:
+    Hosted mode (DATABRICKS_APPS_HOSTED=1):
+        Reads from the per-request ContextVar populated by IdentityMiddleware
+        from the X-Forwarded-User header. Never touches OAuth credentials.
+
+    Local mode:
     - OAuth browser / CLI users  → their email address (from current_user.me())
     - OAuth M2M service accounts → "sp:<DATABRICKS_CLIENT_ID>"
     - Unresolvable                → "unknown"
 
-    Must be called while the user's own credentials are still in context
-    (i.e. before switching to the SQL SP client inside an executor).
-
     Returns:
         Identity string, never None.
     """
+    if os.environ.get("DATABRICKS_APPS_HOSTED"):
+        from hosting.request_identity import get_current_mcp_user
+
+        return get_current_mcp_user()
+
     from databricks_tools_core.auth import get_current_username
 
     username = get_current_username()
