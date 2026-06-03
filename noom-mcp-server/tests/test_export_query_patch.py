@@ -230,6 +230,41 @@ def test_write_csv_overwrites_when_true(tmp_path, monkeypatch):
     assert [p.name for p in tmp_path.iterdir()] == ["out.csv"]
 
 
+def test_write_csv_refuses_parent_symlink_outside_sandbox(tmp_path, monkeypatch):
+    # Simulates a symlink introduced under the base after resolve_export_path ran:
+    # base/sub -> external. The re-check must refuse to write and create nothing
+    # outside the sandbox.
+    monkeypatch.setattr(ep, "_download_link", lambda link: link._payload)
+    base = tmp_path / "base"
+    base.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (base / "sub").symlink_to(external, target_is_directory=True)
+    dest = base / "sub" / "out.csv"  # resolves to external/out.csv
+
+    with pytest.raises(ValueError, match="outside the export sandbox"):
+        ep._write_csv(dest, ["id"], [_FakeLink(0, b"id\n1\n")], overwrite=True, base_dir=base)
+
+    assert list(external.iterdir()) == []  # nothing written outside
+
+
+def test_write_csv_allows_parent_symlink_inside_sandbox(tmp_path, monkeypatch):
+    # A symlink that still resolves *inside* the base is fine (containment, not a
+    # blanket symlink ban).
+    monkeypatch.setattr(ep, "_download_link", lambda link: link._payload)
+    base = tmp_path / "base"
+    base.mkdir()
+    (base / "real").mkdir()
+    (base / "alias").symlink_to(base / "real", target_is_directory=True)
+    dest = base / "alias" / "out.csv"  # resolves to base/real/out.csv (inside)
+
+    ep._write_csv(
+        dest, ["id", "name"], [_FakeLink(0, b"id,name\n1,a\n")], overwrite=True, base_dir=base
+    )
+
+    assert (base / "real" / "out.csv").read_text() == "id,name\n1,a\n"
+
+
 # ---------------------------------------------------------------------------
 # Timeout clamp
 # ---------------------------------------------------------------------------

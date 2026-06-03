@@ -274,7 +274,11 @@ def _download_link(link) -> bytes:
 
 
 def _write_csv(
-    dest: Path, columns: List[str], links: Iterable[Any], overwrite: bool = False
+    dest: Path,
+    columns: List[str],
+    links: Iterable[Any],
+    overwrite: bool = False,
+    base_dir: Optional[Path] = None,
 ) -> None:
     """Stream each CSV chunk's bytes to ``dest`` in row order, atomically.
 
@@ -303,7 +307,23 @@ def _write_csv(
     is in flight). When ``overwrite`` is False the move uses ``os.link``, which
     fails atomically if ``dest`` already exists — closing that TOCTOU window.
     When True it uses ``os.replace`` (atomic clobber).
+
+    Sandbox re-check: ``resolve_export_path`` validated containment before the
+    query, but ``dest.parent`` could have become a symlink pointing outside the
+    sandbox in the meantime. When ``base_dir`` is given, the destination's parent
+    is re-resolved and re-checked for containment immediately before writing, so
+    the write can't follow such a symlink out of the export dir.
     """
+    if base_dir is not None:
+        base = base_dir.resolve()
+        real_parent = dest.parent.resolve()
+        if real_parent != base and base not in real_parent.parents:
+            raise ValueError(
+                f"refusing to write {dest}: its directory resolves outside the export "
+                f"sandbox ({base}) — a symlink may have been introduced after the path "
+                f"was validated."
+            )
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".part")
     tmp = Path(tmp_name)
@@ -398,7 +418,8 @@ def _run_export(
     # Clear out files past the retention window before writing a new one.
     sweep_old_exports()
 
-    dest = resolve_export_path(output_path)
+    base = get_export_base_dir()
+    dest = resolve_export_path(output_path, base)
     if dest.exists() and not overwrite:
         raise ValueError(f"{dest} already exists. Pass overwrite=true to replace it.")
 
@@ -459,7 +480,7 @@ def _run_export(
     # just-in-time (see _iter_external_links / _write_csv), so links don't age
     # out during a long multi-chunk download.
     links = _iter_external_links(client, statement_id, status.result)
-    _write_csv(dest, columns, links, overwrite=overwrite)
+    _write_csv(dest, columns, links, overwrite=overwrite, base_dir=base)
 
     return {
         "path": str(dest),
