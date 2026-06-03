@@ -205,6 +205,31 @@ def test_write_csv_failure_creates_no_destination(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == []  # temp cleaned up
 
 
+def test_write_csv_refuses_to_clobber_when_overwrite_false(tmp_path, monkeypatch):
+    # Even if dest appears after the caller's early check (simulated here by it
+    # already existing), the atomic move must not clobber it when overwrite=False.
+    monkeypatch.setattr(ep, "_download_link", lambda link: link._payload)
+    dest = tmp_path / "out.csv"
+    dest.write_text("ORIGINAL\n")
+
+    with pytest.raises(ValueError, match="already exists"):
+        ep._write_csv(dest, ["id"], [_FakeLink(0, b"id\n1\n")], overwrite=False)
+
+    assert dest.read_text() == "ORIGINAL\n"  # untouched
+    assert [p.name for p in tmp_path.iterdir()] == ["out.csv"]  # no .part leftover
+
+
+def test_write_csv_overwrites_when_true(tmp_path, monkeypatch):
+    monkeypatch.setattr(ep, "_download_link", lambda link: link._payload)
+    dest = tmp_path / "out.csv"
+    dest.write_text("OLD\n")
+
+    ep._write_csv(dest, ["id", "name"], [_FakeLink(0, b"id,name\n1,a\n")], overwrite=True)
+
+    assert dest.read_text() == "id,name\n1,a\n"
+    assert [p.name for p in tmp_path.iterdir()] == ["out.csv"]
+
+
 # ---------------------------------------------------------------------------
 # Timeout clamp
 # ---------------------------------------------------------------------------
@@ -250,6 +275,37 @@ def test_sweep_disabled_when_retention_not_positive(tmp_path):
     _make_aged_file(old, age_days=999)
     assert ep.sweep_old_exports(base_dir=tmp_path, retention_days=0) == 0
     assert old.exists()
+
+
+def test_sweep_does_not_descend_dir_symlink(tmp_path):
+    # A directory symlink inside the export dir pointing OUTSIDE must never be
+    # followed — files behind it must survive the sweep.
+    base = tmp_path / "base"
+    base.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    victim = external / "victim.csv"
+    _make_aged_file(victim, age_days=999)
+    (base / "link").symlink_to(external, target_is_directory=True)
+
+    ep.sweep_old_exports(base_dir=base, retention_days=7)
+
+    assert victim.exists()  # external file must NOT be deleted
+
+
+def test_sweep_skips_file_symlink_to_external(tmp_path):
+    # A file symlink to an external old file must not cause the target's deletion.
+    base = tmp_path / "base"
+    base.mkdir()
+    external = tmp_path / "ext"
+    external.mkdir()
+    target = external / "target.csv"
+    _make_aged_file(target, age_days=999)
+    (base / "alias.csv").symlink_to(target)
+
+    ep.sweep_old_exports(base_dir=base, retention_days=7)
+
+    assert target.exists()  # symlink target untouched
 
 
 def test_sweep_prunes_empty_subdirs(tmp_path):

@@ -148,20 +148,31 @@ def sweep_old_exports(base_dir: Optional[Path] = None, retention_days: Optional[
     cutoff = time.time() - days * 86400
     removed = 0
 
-    for path in base.rglob("*"):
-        try:
-            if path.is_file() and path.stat().st_mtime < cutoff:
-                path.unlink()
-                removed += 1
-        except OSError as exc:
-            logger.warning("export retention sweep: could not remove %s: %s", path, exc)
+    # os.walk(followlinks=False) never descends into symlinked directories, so
+    # the walk cannot reach files outside the export dir. We additionally skip
+    # symlinks outright and confirm each file's real path stays under base — a
+    # deletion path must not depend on a glob/walk default to stay sandboxed.
+    for root, _dirs, files in os.walk(base, followlinks=False):
+        root_path = Path(root)
+        for name in files:
+            path = root_path / name
+            try:
+                if path.is_symlink():
+                    continue
+                if base not in path.resolve().parents:
+                    continue
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    removed += 1
+            except OSError as exc:
+                logger.warning("export retention sweep: could not remove %s: %s", path, exc)
 
-    # Prune now-empty subdirectories, deepest first (never the base itself).
-    for path in sorted(
-        (p for p in base.rglob("*") if p.is_dir()),
-        key=lambda p: len(p.parts),
-        reverse=True,
-    ):
+    # Prune now-empty real subdirectories, deepest first (never base, never a
+    # symlinked directory).
+    for root, _dirs, _files in os.walk(base, topdown=False, followlinks=False):
+        path = Path(root)
+        if path == base or path.is_symlink():
+            continue
         try:
             if not any(path.iterdir()):
                 path.rmdir()
@@ -262,7 +273,9 @@ def _download_link(link) -> bytes:
         return resp.read()
 
 
-def _write_csv(dest: Path, columns: List[str], links: Iterable[Any]) -> None:
+def _write_csv(
+    dest: Path, columns: List[str], links: Iterable[Any], overwrite: bool = False
+) -> None:
     """Stream each CSV chunk's bytes to ``dest`` in row order, atomically.
 
     Databricks EXTERNAL_LINKS + CSV chunks already include the column header
@@ -279,11 +292,17 @@ def _write_csv(dest: Path, columns: List[str], links: Iterable[Any]) -> None:
     still valid and carries the column names for downstream tools.
 
     Atomicity: the data is streamed to a temp file in the destination directory
-    and only ``os.replace``-d into place after the *last* chunk is written. If a
-    chunk download fails (or the tool's wall-clock ceiling fires mid-stream), the
-    temp file is removed and ``dest`` is left untouched — never a partial or
-    empty file at the real path. A half-written CSV that looks complete is
-    exactly the silent corruption this tool exists to prevent.
+    and moved into place only after the *last* chunk is written. If a chunk
+    download fails (or the tool's wall-clock ceiling fires mid-stream), the temp
+    file is removed and ``dest`` is left untouched — never a partial or empty
+    file at the real path. A half-written CSV that looks complete is exactly the
+    silent corruption this tool exists to prevent.
+
+    Overwrite guard: the existence check in the caller runs before a long query,
+    so it can't be the authoritative guard (the file may appear while the query
+    is in flight). When ``overwrite`` is False the move uses ``os.link``, which
+    fails atomically if ``dest`` already exists — closing that TOCTOU window.
+    When True it uses ``os.replace`` (atomic clobber).
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".part")
@@ -296,7 +315,18 @@ def _write_csv(dest: Path, columns: List[str], links: Iterable[Any]) -> None:
                 wrote_any = True
             if not wrote_any:
                 fh.write(_csv_header_line(columns).encode("utf-8"))
-        os.replace(tmp, dest)  # atomic on the same filesystem
+        if overwrite:
+            os.replace(tmp, dest)  # atomic clobber, same filesystem
+        else:
+            # Atomic no-clobber: fails if dest exists, even if it appeared during
+            # the query (after the caller's early existence check).
+            try:
+                os.link(tmp, dest)
+            except FileExistsError as exc:
+                raise ValueError(
+                    f"{dest} already exists. Pass overwrite=true to replace it."
+                ) from exc
+        tmp.unlink(missing_ok=True)  # for the os.link path; no-op after os.replace
     except BaseException:
         # Includes timeouts/cancellation: never leave a partial file behind,
         # and never clobber a prior good export at `dest`.
@@ -429,7 +459,7 @@ def _run_export(
     # just-in-time (see _iter_external_links / _write_csv), so links don't age
     # out during a long multi-chunk download.
     links = _iter_external_links(client, statement_id, status.result)
-    _write_csv(dest, columns, links)
+    _write_csv(dest, columns, links, overwrite=overwrite)
 
     return {
         "path": str(dest),
