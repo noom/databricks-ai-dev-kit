@@ -112,12 +112,15 @@ There are two distinct "CSV" artifacts; only one is ours to manage.
 | Artifact | Location | Lifecycle | Owner |
 |---|---|---|---|
 | Cloud-fetch staging | Databricks-managed cloud storage | Transient. Each presigned link carries an explicit `expiration` (the authoritative value; ~15 min observed in testing, **not** a documented constant). The staged result is held only briefly under Databricks' statement-result retention, then purged. | **Databricks** — we don't choose the path, create a table/volume, or extend it |
-| Exported `.csv` | Engineer's local disk (`DATABRICKS_MCP_EXPORT_DIR`) | Deleted after `DATABRICKS_MCP_EXPORT_RETENTION_DAYS` (default 7; `0` disables); swept on startup and before each export. The sweep never follows symlinks or deletes outside the base. | **This tool** |
+| Exported `.csv` | Engineer's local disk (`DATABRICKS_MCP_EXPORT_DIR`) | Persists until the engineer deletes it — **no automatic cleanup**. | **The engineer** |
 
-We persist nothing durable or self-owned in Databricks. The only artifact we
-own is the local file, and because exports can contain prod PII it is **not**
-retained indefinitely: `sweep_old_exports()` removes files older than the
-retention window.
+We persist nothing durable or self-owned in Databricks. The exported file is the
+engineer's to keep or remove. There is **deliberately no automatic deletion**:
+the data is PII-masked at source by the governed MCP (which is what makes local
+downloads acceptable in the first place), and **reproducibility of prior
+analyses outweighs disk hygiene** — silently removing earlier exports would
+undermine re-running a past analysis. A time-based retention sweep was
+prototyped during review and removed for these reasons.
 
 ### Governing principle
 The MCP layer is a **control plane, not a data plane.** It orchestrates and
@@ -131,14 +134,14 @@ pattern as the SQL-timeout PR (#18):
 
 | File | Change |
 |---|---|
-| `customization/export_query_patch.py` | New — tool, lazy chunk streaming, atomic write, overwrite guard, timeout clamp, path sandbox + retention sweep |
+| `customization/export_query_patch.py` | New — tool, lazy chunk streaming, atomic write, overwrite guard, timeout clamp, path sandbox |
 | `customization/tool_allowlist_patch.py` | Added `export_query_to_file` to `ALLOWED_TOOLS` |
 | `run.py` | New Step 2b: registers the tool before the allowlist |
-| `tests/test_export_query_patch.py` | New — unit tests (sandbox, header quoting, lazy chunk iteration, atomic write, overwrite guard, timeout clamp, retention, symlink hardening) |
-| `.env.example` | Documented `DATABRICKS_MCP_EXPORT_DIR` and `DATABRICKS_MCP_EXPORT_RETENTION_DAYS` |
+| `tests/test_export_query_patch.py` | New — unit tests (sandbox, header quoting, lazy chunk iteration, atomic write, overwrite guard, timeout clamp) |
+| `.env.example` | Documented `DATABRICKS_MCP_EXPORT_DIR` |
 | `docs/export-tool-design.md` | This design note |
 
-**Validation:** 65 unit tests pass, ruff check + format clean. Validated three
+**Validation:** 59 unit tests pass, ruff check + format clean. Validated three
 ways: the full `run.py` startup lifecycle (tool registered, survives the
 allowlist, governed SP path), live warehouse exports (synthetic deterministic,
 a real 122-column slice, empty → header-only), and a byte-for-byte identical
@@ -170,11 +173,12 @@ note now reflects the shipped behavior:
   statements when a caller passes an over-large timeout.
 - **Write-time sandbox re-check** added, so a symlink introduced during the
   query can't redirect the write outside the export dir.
-- **Retention / PII lifecycle added.** New `DATABRICKS_MCP_EXPORT_RETENTION_DAYS`
-  (default 7); files are swept on startup and before each export. The sweep is
-  symlink-hardened (never follows symlinks or deletes outside the base).
+- **No automatic file retention.** A time-based retention sweep was prototyped
+  during review and then **removed**: the exported data is PII-masked at source,
+  and auto-deleting prior exports works against reproducibility. Exported files
+  persist until the engineer removes them.
 - **Lifecycle wording corrected.** The "~15 min" presigned-link figure is an
   *observation*, not a documented Databricks SLA — the per-response `expiration`
   field is authoritative.
-- **Counts updated.** Six files (added `.env.example`, this doc); 65 unit tests
+- **Counts updated.** Six files (added `.env.example`, this doc); 59 unit tests
   (was "14 / 51").

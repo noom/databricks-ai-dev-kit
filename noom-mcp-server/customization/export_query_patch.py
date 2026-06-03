@@ -74,12 +74,6 @@ EXPORT_TOOL_TIMEOUT_CEILING = 600
 # ``timeout`` argument, bounded by the ceiling above.
 _DEFAULT_STATEMENT_TIMEOUT = 300
 
-# Default retention window (days) for files in the export directory. Exported
-# files can contain prod PII, so they are not kept indefinitely: a sweep removes
-# files older than this on startup and before each export. Override with
-# DATABRICKS_MCP_EXPORT_RETENTION_DAYS; set it to 0 (or negative) to disable.
-_DEFAULT_RETENTION_DAYS = 7
-
 _SUPPORTED_FORMATS = ("csv",)
 
 
@@ -98,95 +92,6 @@ def get_export_base_dir() -> Path:
     base = base.resolve()
     base.mkdir(parents=True, exist_ok=True)
     return base
-
-
-# ---------------------------------------------------------------------------
-# Retention
-# ---------------------------------------------------------------------------
-
-
-def get_export_retention_days() -> int:
-    """Return the export-file retention window in days (default 7; 0 disables).
-
-    Read from ``DATABRICKS_MCP_EXPORT_RETENTION_DAYS``. Invalid values fall back
-    to the default with a warning.
-    """
-    raw = os.environ.get("DATABRICKS_MCP_EXPORT_RETENTION_DAYS")
-    if raw is None or not raw.strip():
-        return _DEFAULT_RETENTION_DAYS
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning(
-            "Invalid DATABRICKS_MCP_EXPORT_RETENTION_DAYS=%r; using default %d.",
-            raw,
-            _DEFAULT_RETENTION_DAYS,
-        )
-        return _DEFAULT_RETENTION_DAYS
-
-
-def sweep_old_exports(base_dir: Optional[Path] = None, retention_days: Optional[int] = None) -> int:
-    """Delete files in the export dir older than the retention window.
-
-    Exported CSVs can contain prod PII, so they are not retained indefinitely.
-    A retention of <= 0 disables the sweep. Empty subdirectories left behind are
-    pruned. Errors removing an individual path are logged, not raised — a sweep
-    failure must never block an export.
-
-    Args:
-        base_dir: Override for the export base dir (tests).
-        retention_days: Override for the retention window (tests).
-
-    Returns:
-        The number of files removed.
-    """
-    days = get_export_retention_days() if retention_days is None else retention_days
-    if days <= 0:
-        return 0
-
-    base = (base_dir or get_export_base_dir()).resolve()
-    cutoff = time.time() - days * 86400
-    removed = 0
-
-    # os.walk(followlinks=False) never descends into symlinked directories, so
-    # the walk cannot reach files outside the export dir. We additionally skip
-    # symlinks outright and confirm each file's real path stays under base — a
-    # deletion path must not depend on a glob/walk default to stay sandboxed.
-    for root, _dirs, files in os.walk(base, followlinks=False):
-        root_path = Path(root)
-        for name in files:
-            path = root_path / name
-            try:
-                if path.is_symlink():
-                    continue
-                if base not in path.resolve().parents:
-                    continue
-                if path.stat().st_mtime < cutoff:
-                    path.unlink()
-                    removed += 1
-            except OSError as exc:
-                logger.warning("export retention sweep: could not remove %s: %s", path, exc)
-
-    # Prune now-empty real subdirectories, deepest first (never base, never a
-    # symlinked directory).
-    for root, _dirs, _files in os.walk(base, topdown=False, followlinks=False):
-        path = Path(root)
-        if path == base or path.is_symlink():
-            continue
-        try:
-            if not any(path.iterdir()):
-                path.rmdir()
-        except OSError:
-            pass
-
-    if removed:
-        logger.info(
-            "export retention sweep: removed %d file(s) older than %d day(s) from %s",
-            removed,
-            days,
-            base,
-        )
-    return removed
 
 
 def resolve_export_path(output_path: str, base_dir: Optional[Path] = None) -> Path:
@@ -415,9 +320,6 @@ def _run_export(
     # statement on the warehouse. The poll loop below cancels at this bound.
     timeout = _clamp_statement_timeout(timeout)
 
-    # Clear out files past the retention window before writing a new one.
-    sweep_old_exports()
-
     base = get_export_base_dir()
     dest = resolve_export_path(output_path, base)
     if dest.exists() and not overwrite:
@@ -546,13 +448,8 @@ def register_export_query_tool(mcp) -> None:
             timeout=timeout,
         )
 
-    # Sweep stale exports left from previous runs at startup, so retention holds
-    # even for an engineer who exports rarely.
-    sweep_old_exports()
-
     logger.info(
-        "Registered export_query_to_file tool (ceiling=%ss, export dir=%s, retention=%d days)",
+        "Registered export_query_to_file tool (ceiling=%ss, export dir=%s)",
         EXPORT_TOOL_TIMEOUT_CEILING,
         get_export_base_dir(),
-        get_export_retention_days(),
     )
