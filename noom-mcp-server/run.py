@@ -94,6 +94,20 @@ except RuntimeError as exc:
 from databricks_mcp_server.server import mcp  # noqa: E402
 
 # ---------------------------------------------------------------------------
+# Step 2b: Register the customization-layer export tool.
+#
+# Adds export_query_to_file, which streams a query's full result set to a local
+# file (server-side write) and returns only a manifest — keeping bulk result
+# data out of the model context. Must run before the allowlist (Step 3), which
+# is the single source of truth for what is exposed; the tool name is listed in
+# ALLOWED_TOOLS.
+# ---------------------------------------------------------------------------
+
+from customization.export_query_patch import register_export_query_tool  # noqa: E402
+
+register_export_query_tool(mcp)
+
+# ---------------------------------------------------------------------------
 # Step 3: Apply the tool allowlist.
 #
 # Removes all tools not on Noom's approved list from the FastMCP instance.
