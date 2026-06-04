@@ -46,6 +46,11 @@ ALLOWED_TOOLS = frozenset(
         "execute_sql_multi",
         # Schema and statistics — uses SQLExecutor internally (SP-governed)
         "get_table_stats_and_schema",
+        # Bulk result export — streams EXTERNAL_LINKS/CSV chunks to a local
+        # file (server-side write, manifest-only return). Governed via the same
+        # SP client + warehouse override + mcp_user tagging. Customization-layer
+        # tool registered in run.py before this allowlist runs.
+        "export_query_to_file",
         # Read-only warehouse listing (list + get_best) — user OAuth, no writes
         # Upstream README names: list_warehouses + get_best_warehouse (merged in v0.1.12)
         "manage_warehouse",
