@@ -2,15 +2,17 @@
 # Deploy the Noom MCP server to Databricks Apps.
 #
 # Usage:
-#   bash scripts/deploy.sh <app-name> [--profile PROFILE] [--warehouse-id ID]
+#   bash scripts/deploy.sh <app-name> --env ENV [--profile PROFILE] [--warehouse-id ID]
 #
-# Defaults:
-#   profile:      dev
-#   warehouse-id: 12ce469e5394ac8b  (ETL Warehouse, dev workspace)
+# Environments (--env):
+#   dev   profile=dev,  host=noom-dev.cloud.databricks.com,  warehouse=12ce469e5394ac8b
+#   prod  profile=prod, host=noom-prod.cloud.databricks.com, warehouse=575c0a43969584a4
+#
+# --profile and --warehouse-id override the env defaults when provided.
 #
 # Example:
-#   bash scripts/deploy.sh mcp-noom-dev
-#   bash scripts/deploy.sh mcp-noom-dev --profile dev --warehouse-id 12ce469e5394ac8b
+#   bash scripts/deploy.sh mcp-noom-dev --env dev
+#   bash scripts/deploy.sh mcp-noom-prod --env prod --warehouse-id <prod-warehouse-id>
 
 set -e
 
@@ -25,11 +27,13 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(dirname "$PROJECT_DIR")"
 
 APP_NAME=""
-PROFILE="dev"
-WAREHOUSE_ID="12ce469e5394ac8b"
+ENV=""
+PROFILE=""
+WAREHOUSE_ID=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --env) ENV="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --warehouse-id) WAREHOUSE_ID="$2"; shift 2 ;;
     -*)  echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
@@ -41,9 +45,31 @@ done
 
 if [ -z "$APP_NAME" ]; then
   echo -e "${RED}Error: app name required.${NC}"
-  echo "Usage: bash scripts/deploy.sh <app-name> [--profile PROFILE] [--warehouse-id ID]"
+  echo "Usage: bash scripts/deploy.sh <app-name> --env ENV [--profile PROFILE] [--warehouse-id ID]"
   exit 1
 fi
+
+if [ -z "$ENV" ]; then
+  echo -e "${RED}Error: --env is required (dev or prod).${NC}"
+  echo "Usage: bash scripts/deploy.sh <app-name> --env ENV [--profile PROFILE] [--warehouse-id ID]"
+  exit 1
+fi
+
+# Apply env defaults, then let explicit flags override.
+case "$ENV" in
+  dev)
+    PROFILE="${PROFILE:-dev}"
+    WAREHOUSE_ID="${WAREHOUSE_ID:-12ce469e5394ac8b}"
+    ;;
+  prod)
+    PROFILE="${PROFILE:-prod}"
+    WAREHOUSE_ID="${WAREHOUSE_ID:-575c0a43969584a4}"
+    ;;
+  *)
+    echo -e "${RED}Error: unknown env '${ENV}'. Valid values: dev, prod.${NC}"
+    exit 1
+    ;;
+esac
 
 CLI_ARGS="--profile $PROFILE"
 STAGING_DIR="/tmp/${APP_NAME}-deploy"
@@ -146,7 +172,7 @@ echo -e "  ${GREEN}✓${NC} Uploaded"
 echo ""
 
 # ── Step 5: Deploy ───────────────────────────────────────────────────────────
-echo -e "${YELLOW}[5/5] Deploying app...${NC}"
+echo -e "${YELLOW}[5/6] Deploying app...${NC}"
 DEPLOY_OUT=$(databricks apps deploy "$APP_NAME" --source-code-path "$WORKSPACE_PATH" $CLI_ARGS 2>&1)
 echo "$DEPLOY_OUT"
 
@@ -168,3 +194,30 @@ else
   echo -e "  databricks apps logs ${APP_NAME} ${CLI_ARGS}"
   exit 1
 fi
+
+# ── Step 6: Surface SP identity ──────────────────────────────────────────────
+echo -e "${YELLOW}[6/6] Fetching app service principal...${NC}"
+APP_SP_NAME=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_name','unknown'))")
+APP_SP=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id','unknown'))")
+
+echo ""
+echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${YELLOW}║  First-deploy checklist (one-time, persists across redeploys) ║${NC}"
+echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  App service principal: ${GREEN}${APP_SP_NAME}${NC}"
+echo -e "  SP application ID:     ${GREEN}${APP_SP}${NC}  (use this for ACL grants)"
+echo ""
+echo -e "  Review the SP above, then complete these steps:"
+echo ""
+echo -e "  1. Grant READ on secret scope dbrix_mcp_secret:"
+echo -e "     ${BLUE}databricks secrets put-acl dbrix_mcp_secret ${APP_SP} READ --profile ${PROFILE}${NC}"
+echo ""
+echo -e "  2. Grant CAN_USE on warehouse ${WAREHOUSE_ID} (Databricks UI):"
+echo -e "     ${BLUE}${WORKSPACE_HOST}/sql/warehouses/${WAREHOUSE_ID}/permissions${NC}"
+echo ""
+echo -e "  3. Set authorization mode to 'On behalf of service principal' (Databricks UI):"
+echo -e "     ${BLUE}${WORKSPACE_HOST}/apps/${APP_NAME}/authorization${NC}"
+echo ""
