@@ -84,7 +84,7 @@ echo -e "  Warehouse: ${WAREHOUSE_ID}"
 echo ""
 
 # ── Step 1: Auth check ──────────────────────────────────────────────────────
-echo -e "${YELLOW}[1/5] Checking auth...${NC}"
+echo -e "${YELLOW}[1/6] Checking auth...${NC}"
 if ! databricks auth describe $CLI_ARGS &>/dev/null; then
   echo -e "${RED}Not authenticated. Run: databricks auth login --profile ${PROFILE}${NC}"; exit 1
 fi
@@ -101,7 +101,7 @@ echo -e "  Deploy to: ${WORKSPACE_PATH}"
 echo ""
 
 # ── Step 2: Staging ─────────────────────────────────────────────────────────
-echo -e "${YELLOW}[2/5] Staging deployment package...${NC}"
+echo -e "${YELLOW}[2/6] Staging deployment package...${NC}"
 rm -rf "$STAGING_DIR" && mkdir -p "$STAGING_DIR"
 
 # Noom's customization and hosting layers
@@ -155,7 +155,7 @@ echo -e "  ${GREEN}✓${NC} Staged to ${STAGING_DIR}"
 echo ""
 
 # ── Step 3: Create app ───────────────────────────────────────────────────────
-echo -e "${YELLOW}[3/5] Ensuring app exists...${NC}"
+echo -e "${YELLOW}[3/6] Ensuring app exists...${NC}"
 if databricks apps get "$APP_NAME" $CLI_ARGS &>/dev/null; then
   echo -e "  ${GREEN}✓${NC} App '${APP_NAME}' already exists"
 else
@@ -166,7 +166,7 @@ fi
 echo ""
 
 # ── Step 4: Upload ───────────────────────────────────────────────────────────
-echo -e "${YELLOW}[4/5] Uploading to workspace...${NC}"
+echo -e "${YELLOW}[4/6] Uploading to workspace...${NC}"
 databricks workspace import-dir "$STAGING_DIR" "$WORKSPACE_PATH" --overwrite $CLI_ARGS
 echo -e "  ${GREEN}✓${NC} Uploaded"
 echo ""
@@ -195,29 +195,32 @@ else
   exit 1
 fi
 
-# ── Step 6: Surface SP identity ──────────────────────────────────────────────
-echo -e "${YELLOW}[6/6] Fetching app service principal...${NC}"
-APP_SP_NAME=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_name','unknown'))")
-APP_SP=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id','unknown'))")
+# ── Step 6: Grant permissions to app SP ──────────────────────────────────────
+echo -e "${YELLOW}[6/6] Granting permissions to app SP...${NC}"
+APP_INFO=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null)
+APP_SP_NAME=$(echo "$APP_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_name','unknown'))")
+APP_SP=$(echo "$APP_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id','unknown'))")
 
 echo ""
-echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${YELLOW}║  First-deploy checklist (one-time, persists across redeploys) ║${NC}"
-echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
 echo -e "  App service principal: ${GREEN}${APP_SP_NAME}${NC}"
-echo -e "  SP application ID:     ${GREEN}${APP_SP}${NC}  (use this for ACL grants)"
+echo -e "  SP application ID:     ${GREEN}${APP_SP}${NC}"
 echo ""
-echo -e "  Review the SP above, then complete these steps:"
-echo ""
-echo -e "  1. Grant READ on secret scope dbrix_mcp_secret:"
-echo -e "     ${BLUE}databricks secrets put-acl dbrix_mcp_secret ${APP_SP} READ --profile ${PROFILE}${NC}"
-echo ""
-echo -e "  2. Grant CAN_USE on warehouse ${WAREHOUSE_ID} (Databricks UI):"
-echo -e "     ${BLUE}${WORKSPACE_HOST}/sql/warehouses/${WAREHOUSE_ID}/permissions${NC}"
-echo ""
-echo -e "  3. Set authorization mode to 'On behalf of service principal' (Databricks UI):"
-echo -e "     ${BLUE}${WORKSPACE_HOST}/apps/${APP_NAME}/authorization${NC}"
+
+if [ "$APP_SP" = "unknown" ] || [ -z "$APP_SP" ]; then
+  echo -e "${RED}Could not determine app SP. Grant manually:${NC}"
+  echo -e "  databricks secrets put-acl dbrix_mcp_secret <sp-client-id> READ --profile ${PROFILE}"
+else
+  echo "  Granting READ on secret scope 'dbrix_mcp_secret'..."
+  databricks secrets put-acl dbrix_mcp_secret "$APP_SP" READ $CLI_ARGS
+  echo -e "  ${GREEN}✓${NC} Secret scope access granted"
+
+  echo "  Setting authorization mode to 'on behalf of service principal' (user_api_scopes: sql)..."
+  TOKEN=$(databricks auth token $CLI_ARGS --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -s -X PATCH "${WORKSPACE_HOST}/api/2.0/apps/${APP_NAME}" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"user_api_scopes": ["sql"]}' > /dev/null
+  echo -e "  ${GREEN}✓${NC} Authorization mode set to 'on behalf of service principal'"
+fi
+
 echo ""

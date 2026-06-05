@@ -223,6 +223,31 @@ def get_mcp_user_identity() -> str:
 # ---------------------------------------------------------------------------
 
 
+def patch_get_best_warehouse() -> None:
+    """Patch get_best_warehouse in the sql module to return the configured warehouse.
+
+    In hosted mode the app SP has no warehouse access, so the live
+    warehouses.list() call returns empty and execute_sql raises before
+    SQLExecutor is ever constructed. Since DATABRICKS_WAREHOUSE_ID is always
+    set in hosted mode, warehouse discovery is unnecessary.
+    """
+    import databricks_tools_core.sql.sql as _sql_module
+
+    if getattr(_sql_module.get_best_warehouse, "_noom_patched", False):
+        logger.debug("get_best_warehouse already patched — skipping")
+        return
+
+    def _patched_get_best_warehouse() -> str:
+        return get_sql_warehouse_id()
+
+    _patched_get_best_warehouse._noom_patched = True
+    _sql_module.get_best_warehouse = _patched_get_best_warehouse
+    logger.info(
+        "get_best_warehouse patched: returns configured warehouse %s",
+        get_sql_warehouse_id(),
+    )
+
+
 def patch_sql_executor() -> None:
     """Patch SQLExecutor to enforce SP client and inject user identity tags.
 

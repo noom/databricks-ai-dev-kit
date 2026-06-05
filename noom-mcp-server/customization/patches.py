@@ -15,6 +15,9 @@ import logging
 from customization.auth_guard_patch import (
     ensure_oauth_authenticated as ensure_oauth_authenticated,
 )  # re-export
+from customization.sql_executor_patch import (
+    patch_get_best_warehouse as patch_get_best_warehouse,
+)  # re-export
 from customization.sql_executor_patch import patch_sql_executor as patch_sql_executor  # re-export
 from customization.version_check import (  # re-export
     UpstreamChangedError as UpstreamChangedError,
@@ -41,6 +44,7 @@ def apply_all_patches() -> None:
        systems with instructions to run 'databricks auth login'.
     """
     check_upstream_version()
+    patch_get_best_warehouse()
     patch_sql_executor()
     ensure_oauth_authenticated()
     logger.info("All Noom MCP governance patches applied successfully")
