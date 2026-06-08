@@ -197,17 +197,26 @@ fi
 
 # ── Step 6: Grant permissions to app SP ──────────────────────────────────────
 echo -e "${YELLOW}[6/6] Granting permissions to app SP...${NC}"
-APP_INFO=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null)
-APP_SP_NAME=$(echo "$APP_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_name','unknown'))")
-APP_SP=$(echo "$APP_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id','unknown'))")
+
+# SP is assigned asynchronously after first deploy — retry for up to 30s.
+APP_SP=""
+APP_SP_NAME=""
+for i in $(seq 1 6); do
+  APP_INFO=$(databricks apps get "$APP_NAME" $CLI_ARGS --output json 2>/dev/null)
+  APP_SP=$(echo "$APP_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); v=d.get('service_principal_client_id',''); print(v if v else '')")
+  APP_SP_NAME=$(echo "$APP_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_name',''))")
+  [ -n "$APP_SP" ] && break
+  echo "  Waiting for SP assignment (attempt $i/6)..."
+  sleep 5
+done
 
 echo ""
 echo -e "  App service principal: ${GREEN}${APP_SP_NAME}${NC}"
 echo -e "  SP application ID:     ${GREEN}${APP_SP}${NC}"
 echo ""
 
-if [ "$APP_SP" = "unknown" ] || [ -z "$APP_SP" ]; then
-  echo -e "${RED}Could not determine app SP. Grant manually:${NC}"
+if [ -z "$APP_SP" ]; then
+  echo -e "${RED}Could not determine app SP after retries. Grant manually:${NC}"
   echo -e "  databricks secrets put-acl dbrix_mcp_secret <sp-client-id> READ --profile ${PROFILE}"
 else
   echo "  Granting READ on secret scope 'dbrix_mcp_secret'..."
