@@ -18,7 +18,7 @@ Noom wraps the upstream MCP server with three SQL governance controls:
 
 ## PII safety
 
-The governed Service Principal does not have access to PII columns in Unity Catalog. SQL results returned through this MCP are PII-free by construction, making it safe to use with AI coding tools.
+The MCP does not mask or redact PII itself. PII protection is enforced at the storage layer by Unity Catalog's ABAC (Attribute-Based Access Control) column-level security policies. The governed Service Principal is granted access only to non-PII columns, so those policies ensure SQL results are PII-free by construction — the MCP never sees the data in the first place.
 
 If your work genuinely requires querying PII data, reach out to the data platform team to discuss access options outside this MCP.
 
@@ -29,6 +29,30 @@ The scripts below install the **unpatched upstream server** without Noom's gover
 - `install.sh`
 - `install.ps1`
 - `databricks-mcp-server/setup.sh`
+
+## How the extension works
+
+Noom's code lives entirely in `noom-mcp-server/`. **No upstream file is modified.**
+
+Instead, `run.py` applies a sequence of monkey-patches to the upstream Python objects before the MCP server starts. The upstream server is then imported and run unchanged.
+
+```
+run.py
+  ├── apply_all_patches()          ← all Noom changes, runs first
+  │     ├── check_upstream_version   abort if upstream changed since last validation
+  │     ├── patch_sql_executor       swap SQLExecutor to use the SP client; tag queries
+  │     ├── patch_get_best_warehouse lock all queries to the designated warehouse
+  │     └── ensure_oauth_authenticated  reject PATs; open browser OAuth flow if needed
+  ├── register_export_query_tool   add bulk-export tool that keeps data out of model context
+  ├── apply_tool_allowlist         remove upstream tools not on Noom's approved list
+  ├── apply_sql_timeout_ceiling    raise the 60 s per-call ceiling for analytical queries
+  └── mcp.run()                    ← upstream FastMCP server, unmodified
+```
+
+**Why monkey-patching instead of forking the code?**
+Patching at the object level means zero diff against the upstream files. When upstream ships a bug fix or new feature, `git merge upstream/main` applies cleanly — Noom's changes don't conflict because they touch no upstream line. The version pin (`PATCHED_UPSTREAM_VERSION` in `version_check.py`) forces an explicit re-validation on every upstream bump; the server refuses to start if the pin is stale.
+
+See [`noom-mcp-server/DEVELOPMENT.md`](noom-mcp-server/DEVELOPMENT.md) for full architecture and design rationale.
 
 ## Upstream components (read-only)
 
