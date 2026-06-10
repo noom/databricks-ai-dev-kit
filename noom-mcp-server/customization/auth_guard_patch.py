@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_oauth_authenticated() -> None:
+    if os.environ.get("DATABRICKS_APPS_HOSTED"):
+        logger.info(
+            "Running in Databricks Apps — skipping browser OAuth "
+            "(user identity arrives per-request via X-Forwarded-User)"
+        )
+        return
+
     """Authenticate the calling user via OAuth, opening a browser if needed.
 
     Execution:

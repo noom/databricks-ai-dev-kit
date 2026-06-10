@@ -1,0 +1,99 @@
+# Dependencies for the hosted Databricks Apps deployment.
+# Generated from: uv export --no-hashes --no-dev (excluding local editable packages)
+# databricks-tools-core and databricks-mcp-server are bundled via PYTHONPATH in deploy.sh.
+aiofile==3.9.0 ; python_full_version < '3.11'
+aiofile==3.11.1 ; python_full_version >= '3.11'
+annotated-types==0.7.0
+anyio==4.13.0
+attrs==26.1.0
+authlib==1.7.2
+backports-tarfile==1.2.0 ; python_full_version < '3.12'
+beartype==0.22.9
+cachetools==7.1.3
+caio==0.9.25
+certifi==2026.5.20
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+chardet==7.4.3
+charset-normalizer==3.4.7
+click==8.3.3
+colorama==0.4.6
+cryptography==48.0.0
+cyclopts==4.14.1
+databricks-sdk==0.110.0
+diff-cover==10.2.0
+dnspython==2.8.0
+docstring-parser==0.18.0
+email-validator==2.3.0
+exceptiongroup==1.3.1
+fastmcp==3.3.1
+fastmcp-slim==3.3.1
+google-auth==2.53.0
+griffelib==2.0.2
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+httpx-sse==0.4.3
+idna==3.15
+importlib-metadata==9.0.0 ; python_full_version < '3.12'
+jaraco-classes==3.4.0
+jaraco-context==6.1.2
+jaraco-functools==4.5.0
+jeepney==0.9.0 ; sys_platform == 'linux'
+jinja2==3.1.6
+joserfc==1.6.5
+jsonref==1.1.0
+jsonschema==4.26.0
+jsonschema-path==0.5.0
+jsonschema-specifications==2025.9.1
+keyring==25.7.0
+markdown-it-py==4.2.0
+markupsafe==3.0.3
+mcp==1.27.1
+mdurl==0.1.2
+more-itertools==11.0.2
+openapi-pydantic==0.5.1
+opentelemetry-api==1.42.0
+packaging==26.2
+pathable==0.6.0
+pathspec==1.1.1
+platformdirs==4.9.6
+pluggy==1.6.0
+plutoprint==0.19.0
+protobuf==6.33.6
+py-key-value-aio==0.4.4
+pyasn1==0.6.3
+pyasn1-modules==0.4.2
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pydantic==2.13.4
+pydantic-core==2.46.4
+pydantic-settings==2.14.1
+pygments==2.20.0
+pyjwt==2.12.1
+pyperclip==1.11.0
+python-dotenv==1.2.2
+python-multipart==0.0.29
+pywin32==311 ; sys_platform == 'win32'
+pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
+pyyaml==6.0.3
+referencing==0.37.0
+regex==2026.5.9
+requests==2.34.2
+rich==15.0.0
+rich-rst==2.0.1
+rpds-py==0.30.0
+secretstorage==3.5.0 ; sys_platform == 'linux'
+sqlfluff==4.2.1
+sqlglot==30.8.0
+sse-starlette==3.4.4
+starlette==1.0.0
+tblib==3.2.2
+tomli==2.4.1 ; python_full_version < '3.11'
+tqdm==4.67.3
+typing-extensions==4.15.0
+typing-inspection==0.4.2
+uncalled-for==0.3.2
+urllib3==2.7.0
+uvicorn==0.47.0
+watchfiles==1.2.0
+websockets==16.0
+zipp==4.1.0 ; python_full_version < '3.12'

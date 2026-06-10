@@ -188,17 +188,23 @@ def get_sql_warehouse_id() -> str:
 def get_mcp_user_identity() -> str:
     """Return the calling user's identity string for SQL query tagging.
 
-    Resolution order:
+    Hosted mode (DATABRICKS_APPS_HOSTED=1):
+        Reads from the per-request ContextVar populated by IdentityMiddleware
+        from the X-Forwarded-User header. Never touches OAuth credentials.
+
+    Local mode:
     - OAuth browser / CLI users  → their email address (from current_user.me())
     - OAuth M2M service accounts → "sp:<DATABRICKS_CLIENT_ID>"
     - Unresolvable                → "unknown"
 
-    Must be called while the user's own credentials are still in context
-    (i.e. before switching to the SQL SP client inside an executor).
-
     Returns:
         Identity string, never None.
     """
+    if os.environ.get("DATABRICKS_APPS_HOSTED"):
+        from hosting.request_identity import get_current_mcp_user
+
+        return get_current_mcp_user()
+
     from databricks_tools_core.auth import get_current_username
 
     username = get_current_username()
@@ -215,6 +221,31 @@ def get_mcp_user_identity() -> str:
 # ---------------------------------------------------------------------------
 # SQLExecutor patches
 # ---------------------------------------------------------------------------
+
+
+def patch_get_best_warehouse() -> None:
+    """Patch get_best_warehouse in the sql module to return the configured warehouse.
+
+    In hosted mode the app SP has no warehouse access, so the live
+    warehouses.list() call returns empty and execute_sql raises before
+    SQLExecutor is ever constructed. Since DATABRICKS_WAREHOUSE_ID is always
+    set in hosted mode, warehouse discovery is unnecessary.
+    """
+    import databricks_tools_core.sql.sql as _sql_module
+
+    if getattr(_sql_module.get_best_warehouse, "_noom_patched", False):
+        logger.debug("get_best_warehouse already patched — skipping")
+        return
+
+    def _patched_get_best_warehouse() -> str:
+        return get_sql_warehouse_id()
+
+    _patched_get_best_warehouse._noom_patched = True
+    _sql_module.get_best_warehouse = _patched_get_best_warehouse
+    logger.info(
+        "get_best_warehouse patched: returns configured warehouse %s",
+        get_sql_warehouse_id(),
+    )
 
 
 def patch_sql_executor() -> None:
